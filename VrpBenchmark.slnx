@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VrpBenchmark.Core/VrpBenchmark.Core.csproj" />
+    <Project Path="src/VrpBenchmark.Instances/VrpBenchmark.Instances.csproj" />
+    <Project Path="src/VrpBenchmark.Runner/VrpBenchmark.Runner.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VrpBenchmark.Tests/VrpBenchmark.Tests.csproj" />
+  </Folder>
+</Solution>

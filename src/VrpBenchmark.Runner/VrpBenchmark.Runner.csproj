@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VrpBenchmark.Core\VrpBenchmark.Core.csproj" />
+    <ProjectReference Include="..\VrpBenchmark.Instances\VrpBenchmark.Instances.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+</Project>
