@@ -1,9 +1,12 @@
 ﻿using System.Globalization;
 using VrpBenchmark.Algorithms;
+using VrpBenchmark.Algorithms.Metaheuristics;
+using VrpBenchmark.Algorithms.Metaheuristics.Alns;
 using VrpBenchmark.Core.Metrics;
 using VrpBenchmark.Core.Model;
 using VrpBenchmark.Core.Validation;
 using VrpBenchmark.Instances;
+using VrpBenchmark.Runner;
 
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -36,6 +39,7 @@ static int Usage()
           --seed <n>            random seed (default 1)
           --customers <n>       solve: use only the first n customers (25/50 variants)
           --out <file.sol>      solve: save the solution
+          --jobs <n>            run-all: instances solved in parallel (default 1)
 
         Algorithms: {string.Join(", ", SolverCatalog.Names)}
         """);
@@ -122,6 +126,10 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
 
     Console.WriteLine($"Algorithm: {solver.Name}");
     Console.WriteLine($"Time     : {result.Elapsed.TotalMilliseconds:0} ms");
+    if (solver is SimulatedAnnealing sa)
+        Console.WriteLine($"Iterations: {sa.LastIterations:N0}");
+    if (solver is Alns alns)
+        Console.WriteLine($"Iterations: {alns.LastIterations:N0}; weights: {string.Join(", ", alns.LastWeights.Select(w => $"{w.Key} {w.Value:0.00}"))}");
     if (solver is I1LocalSearch { LastStats: { } ls })
         Console.WriteLine($"Moves    : relocate {ls.Relocate}, swap {ls.Swap}, 2-opt* {ls.TwoOptStar}, 2-opt {ls.TwoOpt}");
     PrintReport(instance, report);
@@ -142,20 +150,26 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
 static int RunAll(string algorithm, string dataDir, CommandOptions options)
 {
     var bks = BksTable.Load(DataDirectory.SolomonBksTable(dataDir));
-    var rows = new List<(string Class, int Vehicles, double Distance, BksEntry Bks, double Ms, bool Feasible)>();
+    var entries = bks.Entries.OrderBy(e => e.Instance, StringComparer.Ordinal).ToArray();
+    var rows = new (string Class, int Vehicles, double Distance, BksEntry Bks, double Ms, bool Feasible)[entries.Length];
+    int done = 0;
 
-    Console.WriteLine($"{"Instance",-8} {"Veh",4} {"BKS",4} {"Distance",10} {"BKS dist",10} {"Gap %",7} {"ms",7}  Status");
-
-    foreach (var entry in bks.Entries.OrderBy(e => e.Instance, StringComparer.Ordinal))
+    Parallel.For(0, entries.Length, new ParallelOptions { MaxDegreeOfParallelism = options.Jobs }, k =>
     {
+        var entry = entries[k];
         var instance = SolomonReader.Read(DataDirectory.SolomonInstance(dataDir, entry.Instance));
         var result = SolverCatalog.Create(algorithm).Solve(instance, options.ToSolverOptions());
         var report = SolutionValidator.Validate(instance, result.Solution);
         var s = report.Stats!;
 
-        rows.Add((InstanceClass(entry.Instance), s.VehiclesUsed, s.Distance, entry, result.Elapsed.TotalMilliseconds, report.IsFeasible));
-        Console.WriteLine($"{entry.Instance,-8} {s.VehiclesUsed,4} {entry.Vehicles,4} {s.Distance,10:0.00} {entry.Distance,10:0.00} {ForDisplay(Gap.Percent(s.Distance, entry.Distance), 2),7:0.00} {result.Elapsed.TotalMilliseconds,7:0}  {(report.IsFeasible ? "OK" : "INFEASIBLE")}");
-    }
+        rows[k] = (InstanceClass(entry.Instance), s.VehiclesUsed, s.Distance, entry, result.Elapsed.TotalMilliseconds, report.IsFeasible);
+        Console.Error.Write($"\r{Interlocked.Increment(ref done)}/{entries.Length} solved");
+    });
+    Console.Error.WriteLine();
+
+    Console.WriteLine($"{"Instance",-8} {"Veh",4} {"BKS",4} {"Distance",10} {"BKS dist",10} {"Gap %",7} {"ms",7}  Status");
+    foreach (var r in rows)
+        Console.WriteLine($"{r.Bks.Instance,-8} {r.Vehicles,4} {r.Bks.Vehicles,4} {r.Distance,10:0.00} {r.Bks.Distance,10:0.00} {ForDisplay(Gap.Percent(r.Distance, r.Bks.Distance), 2),7:0.00} {r.Ms,7:0}  {(r.Feasible ? "OK" : "INFEASIBLE")}");
 
     // CNV / CTD: cumulative number of vehicles and total distance, the usual way to report Solomon results.
     Console.WriteLine();
@@ -169,7 +183,7 @@ static int RunAll(string algorithm, string dataDir, CommandOptions options)
     }
 
     Console.WriteLine();
-    Console.WriteLine($"Total time {rows.Sum(r => r.Ms) / 1000:0.0} s, infeasible: {rows.Count(r => !r.Feasible)}");
+    Console.WriteLine($"Total solver time {rows.Sum(r => r.Ms) / 1000:0.0} s, infeasible: {rows.Count(r => !r.Feasible)}");
     return rows.All(r => r.Feasible) ? 0 : 2;
 }
 
@@ -178,7 +192,7 @@ static string InstanceClass(string name) => name[..(name.Length - 2)];
 // A tiny negative value such as -0.0004 rounds to "-0.00" in .NET; adding +0.0 turns the rounded -0.0 into +0.0.
 static double ForDisplay(double value, int decimals) => Math.Round(value, decimals) + 0.0;
 
-sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, string? Output)
+sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, string? Output, int Jobs)
 {
     public SolverOptions ToSolverOptions() => new(TimeSpan.FromSeconds(TimeSeconds), Seed);
 
@@ -189,6 +203,7 @@ sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, strin
         int seed = 1;
         int? customers = null;
         string? output = null;
+        int jobs = 1;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -198,11 +213,12 @@ sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, strin
                 case "--seed": seed = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--customers": customers = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--out": output = args[++i]; break;
+                case "--jobs": jobs = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 default: rest.Add(args[i]); break;
             }
         }
 
         positional = [.. rest];
-        return new CommandOptions(time, seed, customers, output);
+        return new CommandOptions(time, seed, customers, output, jobs);
     }
 }

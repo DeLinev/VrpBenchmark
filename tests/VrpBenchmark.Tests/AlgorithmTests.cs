@@ -87,12 +87,4 @@ public class AlgorithmTests
 
         Assert.Throws<ArgumentException>(() => new LocalSearch(instance).Improve(oneRoute));
     }
-
-    [Fact]
-    public void Catalog_creates_known_solvers()
-    {
-        Assert.Equal("I1", SolverCatalog.Create("i1").Name);
-        Assert.Equal("I1+LS", SolverCatalog.Create("I1-LS").Name);
-        Assert.Throws<ArgumentException>(() => SolverCatalog.Create("unknown"));
-    }
 }

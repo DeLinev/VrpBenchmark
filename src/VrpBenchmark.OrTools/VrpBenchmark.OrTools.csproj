@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\VrpBenchmark.Core\VrpBenchmark.Core.csproj" />
+    <ProjectReference Include="..\VrpBenchmark.Algorithms\VrpBenchmark.Algorithms.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.OrTools" Version="9.15.6755" />
+  </ItemGroup>
+</Project>

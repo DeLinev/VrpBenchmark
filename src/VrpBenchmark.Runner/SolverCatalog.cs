@@ -1,6 +1,10 @@
+using VrpBenchmark.Algorithms;
 using VrpBenchmark.Algorithms.Construction;
+using VrpBenchmark.Algorithms.Metaheuristics;
+using VrpBenchmark.Algorithms.Metaheuristics.Alns;
+using VrpBenchmark.OrTools;
 
-namespace VrpBenchmark.Algorithms;
+namespace VrpBenchmark.Runner;
 
 public static class SolverCatalog
 {
@@ -8,6 +12,9 @@ public static class SolverCatalog
     {
         ["i1"] = () => new SolomonI1(),
         ["i1-ls"] = () => new I1LocalSearch(),
+        ["sa"] = () => new SimulatedAnnealing(),
+        ["alns"] = () => new Alns(),
+        ["ortools"] = () => new OrToolsSolver(),
     };
 
     public static IEnumerable<string> Names => Factories.Keys;

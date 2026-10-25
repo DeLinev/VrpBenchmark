@@ -36,6 +36,22 @@ public sealed class RouteState
         Update();
     }
 
+    private RouteState(RouteState other)
+    {
+        _instance = other._instance;
+        _prefix = (Segment[])other._prefix.Clone();
+        _suffix = (Segment[])other._suffix.Clone();
+        VehicleTypeIndex = other.VehicleTypeIndex;
+        Vehicle = other.Vehicle;
+        Visits = [.. other.Visits];
+        StartDepot = other.StartDepot;
+        EndDepot = other.EndDepot;
+        Cost = other.Cost;
+    }
+
+    /// <summary>Copies the cached segments instead of recomputing them.</summary>
+    public RouteState Clone() => new(this);
+
     /// <summary>Start depot followed by the first <paramref name="count"/> visits.</summary>
     public ref readonly Segment Prefix(int count) => ref _prefix[count];
 
@@ -43,6 +59,29 @@ public sealed class RouteState
     public ref readonly Segment Suffix(int position) => ref _suffix[position];
 
     public Segment NodeAt(int position) => Segment.ForNode(_instance.Nodes[Visits[position]]);
+
+    public TravelMatrix Matrix => _instance.Matrix;
+
+    /// <summary>Visits in positions [from, to) in their current order; the range must not be empty.</summary>
+    public Segment Fold(int from, int to)
+    {
+        var segment = NodeAt(from);
+        for (int i = from + 1; i < to; i++)
+            segment = Segment.Concat(_instance.Matrix, segment, NodeAt(i));
+        return segment;
+    }
+
+    /// <summary>Visits in positions [from, to) in reverse order; the range must not be empty.</summary>
+    public Segment FoldReversed(int from, int to)
+    {
+        var segment = NodeAt(to - 1);
+        for (int i = to - 2; i >= from; i--)
+            segment = Segment.Concat(_instance.Matrix, segment, NodeAt(i));
+        return segment;
+    }
+
+    /// <summary>Cost this route would have if its visits formed <paramref name="route"/> (depots included).</summary>
+    public double CostIf(in Segment route, int visitCount) => CostOf(Vehicle, route, visitCount);
 
     /// <summary>Must be called after <see cref="Visits"/> has been modified.</summary>
     public void Update()

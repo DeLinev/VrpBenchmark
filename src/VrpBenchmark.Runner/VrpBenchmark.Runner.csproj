@@ -4,6 +4,7 @@
     <ProjectReference Include="..\VrpBenchmark.Core\VrpBenchmark.Core.csproj" />
     <ProjectReference Include="..\VrpBenchmark.Instances\VrpBenchmark.Instances.csproj" />
     <ProjectReference Include="..\VrpBenchmark.Algorithms\VrpBenchmark.Algorithms.csproj" />
+    <ProjectReference Include="..\VrpBenchmark.OrTools\VrpBenchmark.OrTools.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

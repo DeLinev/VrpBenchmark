@@ -3,6 +3,7 @@
     <Project Path="src/VrpBenchmark.Algorithms/VrpBenchmark.Algorithms.csproj" />
     <Project Path="src/VrpBenchmark.Core/VrpBenchmark.Core.csproj" />
     <Project Path="src/VrpBenchmark.Instances/VrpBenchmark.Instances.csproj" />
+    <Project Path="src/VrpBenchmark.OrTools/VrpBenchmark.OrTools.csproj" />
     <Project Path="src/VrpBenchmark.Runner/VrpBenchmark.Runner.csproj" />
   </Folder>
   <Folder Name="/tests/">
