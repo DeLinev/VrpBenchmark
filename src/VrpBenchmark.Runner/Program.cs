@@ -10,6 +10,7 @@ using VrpBenchmark.Runner;
 
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var options = CommandOptions.Parse(args, out var positional);
 
@@ -21,6 +22,7 @@ return positional switch
     ["check-bks", var dataDir] => CheckBks(dataDir),
     ["solve", var algorithm, var instancePath] => Solve(algorithm, instancePath, options),
     ["run-all", var algorithm] => RunAll(algorithm, DataDirectory.Find(), options),
+    ["benchmark"] => RunBenchmark(DataDirectory.Find(), options),
     _ => Usage(),
 };
 
@@ -33,13 +35,20 @@ static int Usage()
           check-bks [data-dir]                    Validate all published best known solutions
           solve <algorithm> <instance.txt>        Solve one instance and validate the result
           run-all <algorithm>                     Solve all 56 Solomon instances, compare with BKS
+          benchmark --name <name>                 Full experiment: algorithms x instances x seeds -> results/<name>/
 
         Options for solve / run-all:
           --time <seconds>      time limit for metaheuristics (default 10)
           --seed <n>            random seed (default 1)
           --customers <n>       solve: use only the first n customers (25/50 variants)
           --out <file.sol>      solve: save the solution
-          --jobs <n>            run-all: instances solved in parallel (default 1)
+          --jobs <n>            run-all / benchmark: runs in parallel (default 1)
+
+        Options for benchmark:
+          --name <name>         experiment folder; rerun with the same name to continue an interrupted run
+          --algorithms <a,b>    default i1-ls,sa,alns,ortools
+          --seeds <n>           seeds 1..n for randomised algorithms (default 10)
+          --instances <a,b>     subset of instances, e.g. c101,r101 (default: all 56)
 
         Algorithms: {string.Join(", ", SolverCatalog.Names)}
         """);
@@ -187,12 +196,41 @@ static int RunAll(string algorithm, string dataDir, CommandOptions options)
     return rows.All(r => r.Feasible) ? 0 : 2;
 }
 
+static int RunBenchmark(string dataDir, CommandOptions options)
+{
+    if (options.Name is null)
+    {
+        Console.Error.WriteLine("benchmark requires --name <name>.");
+        return 1;
+    }
+
+    var all = BksTable.Load(DataDirectory.SolomonBksTable(dataDir)).Entries.Select(e => e.Instance).Order(StringComparer.Ordinal).ToList();
+    var instances = options.Instances is null
+        ? all
+        : [.. options.Instances.Split(',').Select(i => all.Single(a => a.Equals(i.Trim(), StringComparison.OrdinalIgnoreCase)))];
+
+    var config = new BenchmarkConfig(
+        options.Name,
+        options.Algorithms?.Split(',').Select(a => a.Trim().ToLowerInvariant()).ToList() ?? ["i1-ls", "sa", "alns", "ortools"],
+        options.Seeds,
+        options.TimeSeconds,
+        options.Jobs,
+        instances);
+
+    foreach (string algorithm in config.Algorithms)
+        SolverCatalog.Create(algorithm);
+
+    string resultsRoot = Path.Combine(Directory.GetParent(dataDir)!.FullName, "results");
+    return Benchmark.Run(dataDir, resultsRoot, config);
+}
+
 static string InstanceClass(string name) => name[..(name.Length - 2)];
 
 // A tiny negative value such as -0.0004 rounds to "-0.00" in .NET; adding +0.0 turns the rounded -0.0 into +0.0.
 static double ForDisplay(double value, int decimals) => Math.Round(value, decimals) + 0.0;
 
-sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, string? Output, int Jobs)
+sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, string? Output, int Jobs,
+    string? Name, string? Algorithms, int Seeds, string? Instances)
 {
     public SolverOptions ToSolverOptions() => new(TimeSpan.FromSeconds(TimeSeconds), Seed);
 
@@ -204,6 +242,8 @@ sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, strin
         int? customers = null;
         string? output = null;
         int jobs = 1;
+        int seeds = 10;
+        string? name = null, algorithms = null, instances = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -214,11 +254,15 @@ sealed record CommandOptions(double TimeSeconds, int Seed, int? Customers, strin
                 case "--customers": customers = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--out": output = args[++i]; break;
                 case "--jobs": jobs = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--seeds": seeds = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--name": name = args[++i]; break;
+                case "--algorithms": algorithms = args[++i]; break;
+                case "--instances": instances = args[++i]; break;
                 default: rest.Add(args[i]); break;
             }
         }
 
         positional = [.. rest];
-        return new CommandOptions(time, seed, customers, output, jobs);
+        return new CommandOptions(time, seed, customers, output, jobs, name, algorithms, seeds, instances);
     }
 }

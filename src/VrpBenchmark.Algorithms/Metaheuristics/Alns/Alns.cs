@@ -127,7 +127,7 @@ public sealed class Alns : ISolver
 
         var polished = new LocalSearch(instance).Improve(best.ToSolution());
         history.Add(new ProgressPoint(stopwatch.Elapsed, Evaluator.Evaluate(instance, polished).Cost));
-        return new SolverResult(polished, stopwatch.Elapsed, history);
+        return new SolverResult(polished, stopwatch.Elapsed, history, iteration);
     }
 
     private PartialSolution Iterate(PartialSolution current, ref double phaseBest, double temperature)

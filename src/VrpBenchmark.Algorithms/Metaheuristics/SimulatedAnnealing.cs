@@ -96,7 +96,7 @@ public sealed class SimulatedAnnealing : ISolver
         LastIterations = iteration;
         var polished = new LocalSearch(instance).Improve(best);
         history.Add(new ProgressPoint(stopwatch.Elapsed, Evaluator.Evaluate(instance, polished).Cost));
-        return new SolverResult(polished, stopwatch.Elapsed, history);
+        return new SolverResult(polished, stopwatch.Elapsed, history, iteration);
     }
 
     /// <summary>T0 such that an average worsening move is accepted with probability InitialAcceptance.</summary>

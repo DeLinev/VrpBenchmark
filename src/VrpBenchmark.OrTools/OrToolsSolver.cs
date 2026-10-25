@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Google.OrTools.ConstraintSolver;
 using Google.Protobuf.WellKnownTypes;
 using VrpBenchmark.Algorithms;
+using VrpBenchmark.Core.Evaluation;
 using VrpBenchmark.Core.Model;
 
 namespace VrpBenchmark.OrTools;
@@ -15,6 +16,8 @@ namespace VrpBenchmark.OrTools;
 public sealed class OrToolsSolver : ISolver
 {
     public const long Scale = 1000;
+
+    public static string LibraryVersion => typeof(RoutingModel).Assembly.GetName().Version?.ToString() ?? "unknown";
 
     public string Name => "OR-Tools";
 
@@ -75,8 +78,17 @@ public sealed class OrToolsSolver : ISolver
         routing.AddDimensionWithVehicleCapacity(demandCallback, 0, capacities, true, "Capacity");
 
         var history = new List<ProgressPoint>();
+        // The callback fires for every accepted solution, not only improving ones, so only new bests are kept.
+        double bestSoFar = double.PositiveInfinity;
         routing.AddAtSolutionCallback(() =>
-            history.Add(new ProgressPoint(stopwatch.Elapsed, routing.CostVar().Value() / (double)Scale)));
+        {
+            double cost = routing.CostVar().Value() / (double)Scale;
+            if (cost < bestSoFar - 1e-9)
+            {
+                bestSoFar = cost;
+                history.Add(new ProgressPoint(stopwatch.Elapsed, cost));
+            }
+        });
 
         var parameters = operations_research_constraint_solver.DefaultRoutingSearchParameters();
         parameters.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.ParallelCheapestInsertion;
@@ -98,6 +110,8 @@ public sealed class OrToolsSolver : ISolver
                 solution.Routes.Add(new Route(vehicles[v].Index, visits));
         }
 
+        // The integer objective is rounded; the last point carries the exact cost like for the other solvers.
+        history.Add(new ProgressPoint(stopwatch.Elapsed, Evaluator.Evaluate(instance, solution).Cost));
         return new SolverResult(solution, stopwatch.Elapsed, history);
     }
 

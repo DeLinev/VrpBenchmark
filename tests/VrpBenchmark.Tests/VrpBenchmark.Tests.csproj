@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\VrpBenchmark.Instances\VrpBenchmark.Instances.csproj" />
     <ProjectReference Include="..\..\src\VrpBenchmark.Algorithms\VrpBenchmark.Algorithms.csproj" />
     <ProjectReference Include="..\..\src\VrpBenchmark.OrTools\VrpBenchmark.OrTools.csproj" />
+    <ProjectReference Include="..\..\src\VrpBenchmark.Runner\VrpBenchmark.Runner.csproj" />
   </ItemGroup>
 
 </Project>
