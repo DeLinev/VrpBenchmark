@@ -18,6 +18,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter
 from scipy import stats
 
@@ -278,7 +279,7 @@ def convergence(exp: Experiment, common: list[str] | None = None,
       (by default those of this experiment), from the moment every run has reached that fleet.
     """
     # The grid ends at the last recorded point: the final (polished) solution comes a few ms after the limit.
-    grid = np.geomspace(0.1, exp.history.time_s.max(), 200) if grid is None else grid
+    grid = np.geomspace(first_solution_time(exp), exp.history.time_s.max(), 200) if grid is None else grid
     bks = exp.bks
     common = set(common_instances(exp.runs) if common is None else common)
     excess, gaps = {}, {}
@@ -384,49 +385,75 @@ def fig_gap_by_instance(exp: Experiment) -> plt.Figure:
 
 
 def fig_convergence(exp: Experiment, reference: Experiment | None = None) -> plt.Figure:
-    """reference: experiment that defines the common instances and the I1 + LS level (by default the same one)."""
+    """
+    Vehicles on a log time axis (they drop within the first seconds), distance on a linear one (it improves late,
+    and the flat stretches keep their true length). reference: experiment that defines the common instances and
+    the I1 + LS level (by default the same one).
+    """
     _style()
     reference = reference or exp
     common = common_instances(reference.runs)
-    grid, excess, gaps = convergence(exp, common)
+    start, end = first_solution_time(exp), exp.history.time_s.max()
+    log_grid, excess, _ = convergence(exp, common, np.geomspace(start, end, 300))
+    linear_grid, _, gaps = convergence(exp, common, np.linspace(start, end, 600))
     i1 = reference.runs[reference.runs.algorithm == "i1-ls"]
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(6.3, 5.6), sharex=True)
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(6.3, 6.0))
 
+    handles = []
     for a in excess.columns:
-        style = {"color": COLORS[a], "linestyle": LINESTYLES[a], "label": LABELS[a]}
-        top.plot(grid, excess[a], **style)
-        bottom.plot(grid, gaps[a], **style)
+        style = {"color": COLORS[a], "linestyle": LINESTYLES[a]}
+        handles += top.plot(log_grid, excess[a], **style, label=LABELS[a])
+        bottom.plot(linear_grid, gaps[a], **style)
+        # A curve that starts late (not every run had the BKS fleet yet) gets a dot where it begins.
+        shown = gaps[a].dropna()
+        if len(shown) and shown.index[0] > linear_grid[0]:
+            bottom.plot(shown.index[0], shown.iloc[0], marker="o", markersize=5, color=COLORS[a])
     if not i1.empty:
-        top.axhline(i1.vehicle_diff.sum(), color=COLORS["i1-ls"], linestyle=LINESTYLES["i1-ls"], linewidth=1.5,
-                    label="I1 + LS (старт SA і ALNS)")
-        bottom.axhline(i1[i1.instance.isin(common)].gap_pct.mean(), color=COLORS["i1-ls"],
-                       linestyle=LINESTYLES["i1-ls"], linewidth=1.5)
-
+        style = {"color": COLORS["i1-ls"], "linestyle": LINESTYLES["i1-ls"], "linewidth": 1.5}
+        handles.append(top.axhline(i1.vehicle_diff.sum(), **style, label="I1 + LS (старт SA і ALNS)"))
+        bottom.axhline(i1[i1.instance.isin(common)].gap_pct.mean(), **style)
     switch = alns_phase_switch(exp)
     if switch:
         for ax in (top, bottom):
-            ax.axvline(switch, color=COLORS["alns"], linewidth=0.8, alpha=0.5, zorder=1)
-        # Upper panel, just left of the line: the area between the ALNS curve and the others is empty there.
-        top.annotate("ALNS: фаза 1 → фаза 2", (switch, 0.25), xycoords=("data", "axes fraction"),
-                     xytext=(-4, 0), textcoords="offset points", ha="right", va="center", fontsize=8,
-                     color=COLORS["alns"])
+            _phase_mark(ax, switch)
+        handles.append(Line2D([], [], color=COLORS["alns"], linewidth=1, alpha=0.6, marker="v", markersize=7,
+                              markeredgewidth=0, label="ALNS: перехід до фази 2"))
 
-    top.set_ylabel(f"Машин понад BKS\n(сума по {exp.runs.instance.nunique()} задачах)")
-    top.set_ylim(bottom=0)
-    top.legend(loc="upper right")
+    seeds = exp.runs.seed.nunique()
+    top.set_ylabel(f"Машин понад BKS\n(сума по {exp.runs.instance.nunique()} задачах,\n"
+                   f"середнє за {seeds} {_runs(seeds)})")
     bottom.set_ylabel(f"Відхилення відстані від BKS, %\n({len(common)} спільних задач)")
-    bottom.set_ylim(bottom=0)
     for ax, values in ((top, excess), (bottom, gaps)):
-        _end_labels(ax, {a: values[a].dropna() for a in values.columns})
-    bottom.set_xscale("log")
-    ticks = [t for t in (0.1, 0.3, 1, 3, 10, 30, 60) if t <= grid[-1]]
-    bottom.set_xticks(ticks)
-    bottom.xaxis.set_major_formatter(COMMA)
-    bottom.xaxis.set_minor_formatter(FuncFormatter(lambda *_: ""))
-    bottom.set_xlabel("Час від початку запуску, с (логарифмічна шкала)")
-    for ax in (top, bottom):
+        ax.set_ylim(bottom=0)
         ax.yaxis.set_major_formatter(COMMA)
+        _end_labels(ax, {a: values[a].dropna() for a in values.columns})
+
+    top.set_xscale("log")
+    top.set_xlim(start * 0.9, end * 1.15)
+    top.set_xticks([t for t in (0.1, 0.3, 1, 3, 10, 30, 60) if start <= t <= end * 1.01])
+    top.xaxis.set_major_formatter(COMMA)
+    top.xaxis.set_minor_formatter(FuncFormatter(lambda *_: ""))
+    top.set_xlabel("Час, с (логарифмічна шкала)")
+    bottom.set_xlim(0, end * 1.02)
+    bottom.xaxis.set_major_formatter(COMMA)
+    bottom.set_xlabel("Час, с")
+    # Filled column by column: algorithms in the first row, reference lines in the second.
+    order = [i for pair in zip(range(3), range(3, 6)) for i in pair if i < len(handles)]
+    fig.legend(handles=[handles[i] for i in order], loc="lower left", bbox_to_anchor=(0.1, 1.0), ncols=3)
+    fig.tight_layout()
     return fig
+
+
+def first_solution_time(exp: Experiment) -> float:
+    """Moment (s) by which every run of every algorithm has its first solution: curves start there."""
+    return float(exp.history.groupby(KEYS).time_s.min().max())
+
+
+def _phase_mark(ax: plt.Axes, x: float) -> None:
+    """Thin line with a triangle on the top edge, so it cannot be mistaken for a data line."""
+    ax.axvline(x, color=COLORS["alns"], linewidth=1, alpha=0.45, zorder=1)
+    ax.plot([x], [1], marker="v", markersize=7, color=COLORS["alns"], transform=ax.get_xaxis_transform(),
+            clip_on=False, zorder=5)
 
 
 def alns_phase_switch(exp: Experiment) -> float | None:
@@ -528,6 +555,10 @@ def _machines(n: int) -> str:
 
 def _tasks(n: int) -> str:
     return _plural(n, "задача", "задачі", "задач")
+
+
+def _runs(n: int) -> str:
+    return _plural(n, "запуск", "запуски", "запусків")
 
 
 def fig_load_effect(exp: Experiment) -> plt.Figure:
