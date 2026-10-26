@@ -78,6 +78,31 @@ public class BenchmarkTests
         Assert.Equal(history[0], thin[0]);
         Assert.Equal(history[^1], thin[^1]);
         Assert.Contains(history[4_999], thin);
+        AssertLagsAtMostOneWindow(history, thin);
+    }
+
+    [Fact]
+    public void Thin_keeps_the_end_of_a_burst_of_improvements()
+    {
+        // Improvements in quick succession, then nothing until the end of the run.
+        ProgressPoint P(double seconds, double cost) => new(TimeSpan.FromSeconds(seconds), cost);
+        var history = new List<ProgressPoint> { P(0.1, 20_100), P(10.0, 20_090), P(10.1, 20_080), P(10.2, 20_070), P(60, 20_070) };
+
+        var thin = Benchmark.Thin(history, 10_000);
+
+        Assert.Contains(history[3], thin);
+        AssertLagsAtMostOneWindow(history, thin);
+    }
+
+    /// <summary>Every original value is reached by the thinned curve no later than 5% (+1 ms) after it occurred.</summary>
+    private static void AssertLagsAtMostOneWindow(List<ProgressPoint> history, List<ProgressPoint> thin)
+    {
+        foreach (var p in history)
+        {
+            double deadline = p.Time.TotalSeconds * 1.05 + 0.001;
+            double reached = thin.Where(k => k.Time.TotalSeconds <= deadline).Min(k => k.Cost);
+            Assert.True(reached <= p.Cost + 1e-9, $"value {p.Cost} at {p.Time.TotalSeconds}s not reached by {deadline}s");
+        }
     }
 
     [Theory]

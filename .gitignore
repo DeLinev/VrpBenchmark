@@ -4,3 +4,5 @@ obj/
 *.user
 results/
 docs/
+__pycache__/
+.ipynb_checkpoints/

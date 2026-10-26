@@ -190,8 +190,9 @@ public static class Benchmark
     }
 
     /// <summary>
-    /// Keeps the convergence curve compact: a point is kept when the vehicle count changes or at least 5% more
-    /// time has passed since the last kept point (log-spaced in time); the final point is always kept.
+    /// Keeps the convergence curve compact (log-spaced in time). Of the points within 5% of time after the last
+    /// kept one, only the last is kept, so the thinned curve lags the true one by at most that window.
+    /// Points where the vehicle count changes, the first and the final point are always kept.
     /// </summary>
     public static List<ProgressPoint> Thin(IReadOnlyList<ProgressPoint> history, double fixedCost)
     {
@@ -199,10 +200,9 @@ public static class Benchmark
         for (int i = 0; i < history.Count; i++)
         {
             var p = history[i];
-            bool last = i == history.Count - 1;
-            if (kept.Count == 0 || last
+            if (kept.Count == 0 || i == history.Count - 1
                 || Decode(p.Cost, fixedCost).Vehicles != Decode(kept[^1].Cost, fixedCost).Vehicles
-                || p.Time.TotalSeconds >= kept[^1].Time.TotalSeconds * 1.05 + 0.001)
+                || history[i + 1].Time.TotalSeconds >= kept[^1].Time.TotalSeconds * 1.05 + 0.001)
             {
                 kept.Add(p);
             }
