@@ -19,6 +19,25 @@ public class BenchmarkTests
     }
 
     [Fact]
+    public void Parallel_runs_start_in_plan_order()
+    {
+        const int jobs = 5;
+        var started = new List<int>();
+
+        Benchmark.ForEachInOrder(Enumerable.Range(0, 500), jobs, i =>
+        {
+            lock (started)
+                started.Add(i);
+            Thread.SpinWait(1000);
+        });
+
+        // Items are taken one by one, so an item can only be overtaken by the ones other workers already hold.
+        Assert.Equal(500, started.Distinct().Count());
+        for (int position = 0; position < started.Count; position++)
+            Assert.True(position >= started[position] - (jobs - 1), $"item {started[position]} started at position {position}");
+    }
+
+    [Fact]
     public void Interrupted_experiment_continues_without_repeating_runs()
     {
         string root = Path.Combine(Path.GetTempPath(), "vrp-bench-" + Guid.NewGuid().ToString("N"));

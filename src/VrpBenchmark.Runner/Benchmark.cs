@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -56,6 +57,16 @@ public static class Benchmark
                         yield return new RunKey(algorithm, instance, seed);
     }
 
+    /// <summary>
+    /// Parallel loop that starts items strictly in the given order. Parallel.ForEach over a list would hand
+    /// each worker its own contiguous range, so the plan order (seeds first) would be lost.
+    /// </summary>
+    public static void ForEachInOrder<T>(IEnumerable<T> items, int jobs, Action<T> body) =>
+        Parallel.ForEach(
+            Partitioner.Create(items, EnumerablePartitionerOptions.NoBuffering),
+            new ParallelOptions { MaxDegreeOfParallelism = jobs },
+            body);
+
     public static HashSet<RunKey> ReadCompleted(string runsPath)
     {
         var done = new HashSet<RunKey>();
@@ -103,7 +114,7 @@ public static class Benchmark
         var clock = Stopwatch.StartNew();
         int finished = 0;
 
-        Parallel.ForEach(pending, new ParallelOptions { MaxDegreeOfParallelism = config.Jobs }, key =>
+        ForEachInOrder(pending, config.Jobs, key =>
         {
             string line;
             try
