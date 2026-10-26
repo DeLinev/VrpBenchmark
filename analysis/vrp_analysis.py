@@ -9,6 +9,7 @@ Everything is written to results/<name>/analysis/: tables as CSV (machine-readab
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,8 +274,8 @@ def convergence(exp: Experiment, common: list[str] | None = None,
     """
     Best-so-far quality over time, split into its two levels:
     - vehicles: total excess over BKS on all instances (mean over seeds);
-    - gap: mean distance gap on the common instances, where every run keeps the BKS fleet size
-      (by default those of this experiment).
+    - gap: mean distance gap on the common instances, where every run ends with the BKS fleet size
+      (by default those of this experiment), from the moment every run has reached that fleet.
     """
     # The grid ends at the last recorded point: the final (polished) solution comes a few ms after the limit.
     grid = np.geomspace(0.1, exp.history.time_s.max(), 200) if grid is None else grid
@@ -298,11 +299,10 @@ def convergence(exp: Experiment, common: list[str] | None = None,
                 gap = (distance - bks.bks_distance[instance]) / bks.bks_distance[instance] * 100
                 gap_rows.append(np.where(known & (vehicles == bks.bks_vehicles[instance]), gap, np.nan))
         excess[a] = np.mean(list(per_seed.values()), axis=0)
-        # Early on some runs may not have reached the BKS fleet yet; the mean is shown once 90% of runs have.
+        # The mean is shown only once every run has the BKS fleet: averaging over a growing subset of runs
+        # would make the curve jump up whenever a late run joins with a long distance.
         g = np.array(gap_rows)
-        count = (~np.isnan(g)).sum(axis=0)
-        mean = np.nansum(g, axis=0) / np.maximum(count, 1)
-        gaps[a] = np.where(count >= 0.9 * len(g), mean, np.nan)
+        gaps[a] = np.where(np.isnan(g).any(axis=0), np.nan, g.mean(axis=0))
 
     return grid, pd.DataFrame(excess, index=grid), pd.DataFrame(gaps, index=grid)
 
@@ -334,38 +334,52 @@ def fig_vehicles_by_class(exp: Experiment) -> plt.Figure:
     for i, a in enumerate(algs):
         ax.bar(x + (i - (len(algs) - 1) / 2) * width, excess[a], width, color=COLORS[a], label=LABELS[a],
                edgecolor="white", linewidth=1)
+        for xi, value in zip(x + (i - (len(algs) - 1) / 2) * width, excess[a]):
+            # Zero bars are invisible, so every bar gets its value; "0" means exactly the BKS fleet.
+            zero = round(value, 2) == 0
+            text = "0" if zero else f"{value:.2f}".replace(".", ",")
+            ax.annotate(text, (xi, value), xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
+                        rotation=0 if zero else 90, fontsize=7, color=TEXT_2)
     ax.set_xticks(x, CLASSES)
     ax.yaxis.set_major_formatter(COMMA)
     ax.set_ylabel("Машин понад BKS\n(середнє на задачу)")
     ax.grid(axis="x", visible=False)
     ax.legend(ncols=len(algs), loc="upper left")
-    ax.set_ylim(0, max(excess.max().max() * 1.25, 0.1))
+    ax.set_ylim(0, max(excess.max().max() * 1.3, 0.1))
     return fig
 
 
-def fig_gap_boxplot(exp: Experiment) -> plt.Figure:
-    """Spread of the distance gap over seeds and instances, metaheuristics only, on the common instances."""
+def fig_gap_by_instance(exp: Experiment) -> plt.Figure:
+    """
+    Distance gap of every common instance (mean over seeds), metaheuristics only: one dot per instance,
+    spread sideways within the algorithm's slot, and a dash at the class mean (the gap_by_class table).
+    """
     _style()
     r = exp.runs[exp.runs.instance.isin(common_instances(exp.runs))]
+    gap = r.groupby(["algorithm", "class", "instance"]).gap_pct.mean().clip(lower=0)
     algs = [a for a in METAHEURISTICS if a in exp.algorithms]
     classes = [c for c in CLASSES if c in set(r["class"])]
-    fig, ax = plt.subplots(figsize=(6.3, 3.0))
+    fig, ax = plt.subplots(figsize=(6.3, 3.2))
     width = 0.8 / len(algs)
     for i, a in enumerate(algs):
-        data = [r[(r.algorithm == a) & (r["class"] == c)].gap_pct.to_numpy() for c in classes]
-        positions = np.arange(len(classes)) + (i - (len(algs) - 1) / 2) * width
-        ax.boxplot(data, positions=positions, widths=width * 0.85, patch_artist=True, showfliers=True,
-                   boxprops={"facecolor": COLORS[a], "edgecolor": COLORS[a], "alpha": 0.85},
-                   medianprops={"color": TEXT, "linewidth": 1.5}, whiskerprops={"color": COLORS[a]},
-                   capprops={"color": COLORS[a]},
-                   flierprops={"marker": MARKERS[a], "markersize": 3, "markerfacecolor": COLORS[a], "markeredgecolor": "none"})
-        ax.plot([], [], color=COLORS[a], linewidth=6, label=LABELS[a])
+        for j, c in enumerate(classes):
+            values = gap.loc[a, c].to_numpy()
+            centre = j + (i - (len(algs) - 1) / 2) * width
+            spread = np.linspace(-0.35, 0.35, len(values)) * width if len(values) > 1 else np.zeros(1)
+            ax.scatter(centre + spread, values, s=14, marker=MARKERS[a], color=COLORS[a], linewidths=0.4,
+                       edgecolors="white", zorder=3, label=LABELS[a] if j == 0 else None)
+            ax.plot([centre - width * 0.45, centre + width * 0.45], [values.mean()] * 2, color=TEXT,
+                    linewidth=1.2, zorder=4)
+    ax.plot([], [], color=TEXT, linewidth=1.2, label="середнє по класу")
     n = r.drop_duplicates("instance").groupby("class").size()
     ax.set_xticks(np.arange(len(classes)), [f"{c}\n({n[c]} {_tasks(n[c])})" for c in classes])
+    for j in range(1, len(classes)):
+        ax.axvline(j - 0.5, color=GRID, linewidth=0.6)
+    ax.set_xlim(-0.5, len(classes) - 0.5)
     ax.yaxis.set_major_formatter(COMMA)
-    ax.set_ylabel("Відхилення відстані від BKS, %")
+    ax.set_ylabel("Відхилення відстані від BKS, %\n(середнє за seed)")
     ax.grid(axis="x", visible=False)
-    ax.legend(ncols=len(algs), loc="lower left", bbox_to_anchor=(0, 1.0))
+    ax.legend(ncols=len(algs) + 1, loc="lower left", bbox_to_anchor=(0, 1.0), markerscale=1.5)
     return fig
 
 
@@ -388,6 +402,15 @@ def fig_convergence(exp: Experiment, reference: Experiment | None = None) -> plt
         bottom.axhline(i1[i1.instance.isin(common)].gap_pct.mean(), color=COLORS["i1-ls"],
                        linestyle=LINESTYLES["i1-ls"], linewidth=1.5)
 
+    switch = alns_phase_switch(exp)
+    if switch:
+        for ax in (top, bottom):
+            ax.axvline(switch, color=COLORS["alns"], linewidth=0.8, alpha=0.5, zorder=1)
+        # Upper panel, just left of the line: the area between the ALNS curve and the others is empty there.
+        top.annotate("ALNS: фаза 1 → фаза 2", (switch, 0.25), xycoords=("data", "axes fraction"),
+                     xytext=(-4, 0), textcoords="offset points", ha="right", va="center", fontsize=8,
+                     color=COLORS["alns"])
+
     top.set_ylabel(f"Машин понад BKS\n(сума по {exp.runs.instance.nunique()} задачах)")
     top.set_ylim(bottom=0)
     top.legend(loc="upper right")
@@ -404,6 +427,15 @@ def fig_convergence(exp: Experiment, reference: Experiment | None = None) -> plt
     for ax in (top, bottom):
         ax.yaxis.set_major_formatter(COMMA)
     return fig
+
+
+def alns_phase_switch(exp: Experiment) -> float | None:
+    """Moment (s) when ALNS moves from vehicle to distance minimisation, from the parameters in run-info.json."""
+    info = exp.path / "run-info.json"
+    if "alns" not in exp.algorithms or not info.exists():
+        return None
+    meta = json.loads(info.read_text(encoding="utf-8"))
+    return meta["timeLimitSeconds"] * meta["parameters"]["alns"]["VehicleMinimizationShare"]
 
 
 def _end_labels(ax: plt.Axes, series: dict[str, pd.Series]) -> None:
@@ -590,7 +622,7 @@ def run(experiment_dir: str, data_dir: str | None = None, map_instances: tuple[s
 
     figures = {
         "fig_vehicles_by_class": fig_vehicles_by_class(exp),
-        "fig_gap_boxplot": fig_gap_boxplot(exp),
+        "fig_gap_by_instance": fig_gap_by_instance(exp),
         "fig_convergence": fig_convergence(curves, reference=exp),
         "fig_ranks": fig_ranks(tests),
         "fig_load_effect": fig_load_effect(exp),
