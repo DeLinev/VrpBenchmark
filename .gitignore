@@ -6,3 +6,4 @@ results/
 docs/
 __pycache__/
 .ipynb_checkpoints/
+.venv/
