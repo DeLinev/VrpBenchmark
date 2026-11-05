@@ -1,10 +1,10 @@
-# Джерела даних
+# Data Sources
 
-- `instances/` — 56 задач Solomon (1987) на 100 клієнтів, архів `solomon-100.zip`
-  з сайту SINTEF TOP: https://www.sintef.no/projectweb/top/vrptw/
-- `bks.csv` — таблиця найкращих відомих розв'язків (ієрархічна ціль: спочатку кількість машин,
-  потім сумарна відстань у подвійній точності) зі сторінки
-  https://www.sintef.no/projectweb/top/vrptw/100-customers/ (завантажено 2026-10-23).
-- `bks-solutions/` — детальні маршрути цих розв'язків із тієї ж сторінки.
+- `instances/`: the 56 Solomon (1987) instances with 100 customers, the `solomon-100.zip` archive
+  from the SINTEF TOP website: https://www.sintef.no/projectweb/top/vrptw/
+- `bks.csv`: a table of best known solutions (hierarchical objective: first the number of vehicles,
+  then total distance in double precision) from the page
+  https://www.sintef.no/projectweb/top/vrptw/100-customers/ (downloaded 2026-10-23).
+- `bks-solutions/`: detailed routes of these solutions from the same page.
 
-Посилання на авторів кожного розв'язку (колонка `reference`) розшифровано на сторінці SINTEF.
+References to the authors of each solution (the `reference` column) are explained on the SINTEF page.

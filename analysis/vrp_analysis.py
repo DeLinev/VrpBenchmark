@@ -312,6 +312,7 @@ def convergence(exp: Experiment, common: list[str] | None = None,
 
 def _style() -> None:
     plt.rcParams.update({
+        "font.family": "Times New Roman",
         "figure.dpi": 100, "savefig.dpi": 300, "savefig.bbox": "tight", "font.size": 9,
         "axes.edgecolor": AXIS, "axes.labelcolor": TEXT_2, "axes.titlesize": 10, "axes.titlecolor": TEXT,
         "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "axes.axisbelow": True,

@@ -2,7 +2,6 @@ bin/
 obj/
 .vs/
 *.user
-results/
 docs/
 __pycache__/
 .ipynb_checkpoints/

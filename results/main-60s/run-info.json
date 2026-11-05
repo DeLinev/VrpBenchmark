@@ -1,0 +1,56 @@
+{
+  "name": "main-60s",
+  "timeLimitSeconds": 60,
+  "created": "2026-10-25T14:42:10",
+  "sessions": [
+    {
+      "started": "2026-10-25T14:42:10",
+      "jobs": 5,
+      "cpu": "AMD Ryzen 5 7535HS with Radeon Graphics",
+      "logicalCores": 12,
+      "os": "Microsoft Windows 10.0.26300",
+      "runtime": ".NET 10.0.12",
+      "gitCommit": "fb25e0eab513c3f36a9e1413f3110e15571e87e5",
+      "gitDirty": false,
+      "finished": "2026-10-25T20:25:12",
+      "runsCompleted": 1736
+    }
+  ],
+  "seeds": 10,
+  "algorithms": [
+    "i1-ls",
+    "sa",
+    "alns",
+    "ortools"
+  ],
+  "instances": 56,
+  "parameters": {
+    "i1": {
+      "grid": 12
+    },
+    "sa": {
+      "InitialAcceptance": 0.5,
+      "FinalTemperatureRatio": 0.001,
+      "CalibrationSamples": 1000,
+      "MaxChainLength": 3
+    },
+    "alns": {
+      "VehicleMinimizationShare": 0.5,
+      "MinRemoved": 4,
+      "MaxRemovedShare": 0.4,
+      "InitialWorsening": 0.05,
+      "FinalTemperatureRatio": 0.002,
+      "ScoreBest": 33,
+      "ScoreBetter": 9,
+      "ScoreAccepted": 13,
+      "SegmentLength": 100,
+      "ReactionFactor": 0.1
+    },
+    "ortools": {
+      "version": "9.15.6755.0",
+      "scale": 1000,
+      "firstSolution": "PARALLEL_CHEAPEST_INSERTION",
+      "metaheuristic": "GUIDED_LOCAL_SEARCH"
+    }
+  }
+}
