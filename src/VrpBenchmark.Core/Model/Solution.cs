@@ -21,13 +21,17 @@ public sealed class Route
 public sealed class Solution
 {
     public List<Route> Routes { get; }
+    /// <summary>Customer node indices explicitly left for the dispatcher.</summary>
+    public List<int> Unassigned { get; }
+    public bool IsComplete => Unassigned.Count == 0;
 
-    public Solution(IEnumerable<Route>? routes = null)
+    public Solution(IEnumerable<Route>? routes = null, IEnumerable<int>? unassigned = null)
     {
         Routes = routes is null ? [] : [.. routes];
+        Unassigned = unassigned is null ? [] : [.. unassigned];
     }
 
     public IEnumerable<Route> UsedRoutes => Routes.Where(r => !r.IsEmpty);
 
-    public Solution Clone() => new(Routes.Select(r => r.Clone()));
+    public Solution Clone() => new(Routes.Select(r => r.Clone()), Unassigned);
 }

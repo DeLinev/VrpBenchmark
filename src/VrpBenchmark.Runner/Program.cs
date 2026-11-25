@@ -2,6 +2,7 @@
 using VrpBenchmark.Algorithms;
 using VrpBenchmark.Algorithms.Metaheuristics;
 using VrpBenchmark.Algorithms.Metaheuristics.Alns;
+using VrpBenchmark.Core.Evaluation;
 using VrpBenchmark.Core.Metrics;
 using VrpBenchmark.Core.Model;
 using VrpBenchmark.Core.Validation;
@@ -67,7 +68,6 @@ static int Usage()
 static int Info(string instancePath)
 {
     var instance = InstanceFile.Read(instancePath);
-    var vehicle = instance.VehicleTypes[0];
     var customers = instance.Customers.Select(c => instance.Nodes[c]).ToList();
 
     Console.WriteLine($"Instance        : {instance.Name}");
@@ -79,6 +79,7 @@ static int Info(string instancePath)
             Console.WriteLine($"Crew {crew.Id}: {crew.Capacity} kg, {crew.VolumeCapacity} m3, shift [{crew.Shift.Start}, {crew.Shift.End}], fixed {crew.FixedCost}, per km {crew.CostPerDistance}");
         return 0;
     }
+    var vehicle = instance.VehicleTypes[0];
     Console.WriteLine($"Vehicles        : {vehicle.Count} x capacity {vehicle.Capacity}");
     Console.WriteLine($"Planning horizon: [{vehicle.Shift.Start}, {vehicle.Shift.End}]");
     Console.WriteLine($"Total demand    : {customers.Sum(c => c.Demand)} (lower bound {Math.Ceiling(customers.Sum(c => c.Demand) / vehicle.Capacity)} vehicles)");
@@ -92,14 +93,20 @@ static int Validate(string instancePath, string solutionPath)
     var solution = SolutionFile.Read(solutionPath, instance);
     var report = SolutionValidator.Validate(instance, solution);
 
-    PrintReport(instance, report);
+    PrintReport(instance, report, solution);
     return report.IsFeasible ? 0 : 2;
 }
 
-static void PrintReport(ProblemInstance instance, ValidationReport report)
+static void PrintReport(ProblemInstance instance, ValidationReport report, Solution solution)
 {
     Console.WriteLine($"Instance : {instance.Name}");
     Console.WriteLine($"Feasible : {(report.IsFeasible ? "yes" : "NO")}");
+    if (report.IsFeasible)
+    {
+        Console.WriteLine($"Coverage : {instance.Customers.Count - solution.Unassigned.Count}/{instance.Customers.Count} assigned ({(solution.IsComplete ? "complete" : "partial")})");
+        foreach (int customer in solution.Unassigned)
+            Console.WriteLine($"Unassigned {instance.Nodes[customer].Id}: {UnassignedOrders.Explain(instance, customer)}");
+    }
 
     if (report.Stats is { } s)
     {
@@ -124,7 +131,7 @@ static int CheckBks(string dataDir)
     {
         var instance = SolomonReader.Read(DataDirectory.SolomonInstance(dataDir, entry.Instance));
         var solution = SolutionFile.Read(DataDirectory.SolomonBksSolution(dataDir, entry.Instance), instance);
-        var report = SolutionValidator.Validate(instance, solution);
+        var report = SolutionValidator.Validate(instance, solution, requireComplete: true);
         var stats = report.Stats!;
 
         // Published distances are rounded to 2 decimals.
@@ -147,6 +154,8 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
     var solver = SolverCatalog.Create(algorithm);
     var instance = InstanceFile.Read(instancePath, options.Customers);
     bool crewFile = InstanceFile.IsCrewFile(instancePath);
+    if (instance.VehicleTypes.Count == 0 && solver is not Alns)
+        throw new ArgumentException("Use alns to obtain an unassigned plan when there are no available crews.");
     if (crewFile && instance.VehicleTypes.Count > 1 && solver is not (Alns or VrpBenchmark.OrTools.OrToolsSolver))
         throw new ArgumentException("Use alns or ortools for a task with multiple crews.");
     var result = solver.Solve(instance, options.ToSolverOptions());
@@ -158,20 +167,21 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
         Console.WriteLine($"Iterations: {sa.LastIterations:N0}");
     if (solver is Alns alns)
     {
-        Console.WriteLine($"Distance phase: {alns.LastDistancePhaseStart.TotalSeconds:0.000} s after start, after {alns.LastVehicleMinimizationIterations:N0} fleet iterations");
+        if (alns.RanDistancePhase)
+            Console.WriteLine($"Distance phase: {alns.LastDistancePhaseStart.TotalSeconds:0.000} s after start, after {alns.LastVehicleMinimizationIterations:N0} fleet iterations");
         Console.WriteLine($"Accepted repeats of the current plan: {alns.LastAcceptedRepeats:N0} of {alns.LastIterations:N0} iterations");
         Console.WriteLine($"Iterations: {alns.LastIterations:N0}; weights: {string.Join(", ", alns.LastWeights.Select(w => $"{w.Key} {w.Value:0.00}"))}");
     }
     if (solver is I1LocalSearch { LastStats: { } ls })
         Console.WriteLine($"Moves    : relocate {ls.Relocate}, swap {ls.Swap}, 2-opt* {ls.TwoOptStar}, 2-opt {ls.TwoOpt}");
-    PrintReport(instance, report);
+    PrintReport(instance, report, result.Solution);
 
     if (crewFile)
     {
         foreach (var route in result.Solution.UsedRoutes)
             Console.WriteLine($"Crew {instance.VehicleTypes[route.VehicleType].Id}: {string.Join(" -> ", route.Visits.Select(i => instance.Nodes[i].Id))}");
     }
-    else if (options.Customers is null && report.Stats is { } s &&
+    else if (result.Solution.IsComplete && options.Customers is null && report.Stats is { } s &&
         BksTable.Load(DataDirectory.SolomonBksTable(DataDirectory.Find())).TryGet(instance.Name, out var entry))
         Console.WriteLine($"BKS      : {entry.Vehicles} vehicles, {entry.Distance:0.00} (gap {ForDisplay(Gap.Percent(s.Distance, entry.Distance), 2):0.00}%)");
 
@@ -196,7 +206,7 @@ static int RunAll(string algorithm, string dataDir, CommandOptions options)
         var entry = entries[k];
         var instance = SolomonReader.Read(DataDirectory.SolomonInstance(dataDir, entry.Instance));
         var result = SolverCatalog.Create(algorithm).Solve(instance, options.ToSolverOptions());
-        var report = SolutionValidator.Validate(instance, result.Solution);
+        var report = SolutionValidator.Validate(instance, result.Solution, requireComplete: true);
         var s = report.Stats!;
 
         rows[k] = (InstanceClass(entry.Instance), s.VehiclesUsed, s.Distance, entry, result.Elapsed.TotalMilliseconds, report.IsFeasible);

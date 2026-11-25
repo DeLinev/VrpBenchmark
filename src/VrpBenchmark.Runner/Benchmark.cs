@@ -152,7 +152,7 @@ public static class Benchmark
             var instance = SolomonReader.Read(DataDirectory.SolomonInstance(dataDir, key.Instance));
             var solver = SolverCatalog.Create(key.Algorithm);
             var result = solver.Solve(instance, new SolverOptions(TimeSpan.FromSeconds(config.TimeLimitSeconds), key.Seed));
-            var report = SolutionValidator.Validate(instance, result.Solution);
+            var report = SolutionValidator.Validate(instance, result.Solution, requireComplete: true);
             var s = report.Stats!;
             bks.TryGet(instance.Name, out var best);
 
@@ -169,7 +169,7 @@ public static class Benchmark
                 best?.Vehicles.ToString(Inv) ?? "", best?.Distance.ToString(Inv) ?? "",
                 best is null ? "" : (s.VehiclesUsed - best.Vehicles).ToString(Inv), gap.ToString("0.####", Inv));
             if (recordPhaseStart)
-                row += "," + (solver is Alns alns ? alns.LastDistancePhaseStart.TotalSeconds.ToString("0.######", Inv) : "");
+                row += "," + (solver is Alns { RanDistancePhase: true } alns ? alns.LastDistancePhaseStart.TotalSeconds.ToString("0.######", Inv) : "");
 
             double fixedCost = instance.VehicleTypes[0].FixedCost;
             var points = Thin(result.History, fixedCost);

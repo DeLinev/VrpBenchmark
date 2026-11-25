@@ -15,6 +15,7 @@ public enum ViolationKind
     TimeWindowMissed,
     LateReturnToDepot,
     VolumeExceeded,
+    ConflictingAssignment,
 }
 
 public sealed record Violation(ViolationKind Kind, string Message);
@@ -43,14 +44,14 @@ public static class SolutionValidator
 {
     private const double Eps = Evaluator.Epsilon;
 
-    public static ValidationReport Validate(ProblemInstance instance, Solution solution)
+    public static ValidationReport Validate(ProblemInstance instance, Solution solution, bool requireComplete = false)
     {
         var violations = new List<Violation>();
         bool evaluable = CheckStructure(instance, solution, violations);
 
         if (evaluable)
         {
-            CheckCoverage(instance, solution, violations);
+            CheckCoverage(instance, solution, violations, requireComplete);
             CheckFleetSize(instance, solution, violations);
 
             for (int r = 0; r < solution.Routes.Count; r++)
@@ -91,7 +92,7 @@ public static class SolutionValidator
         return ok;
     }
 
-    private static void CheckCoverage(ProblemInstance instance, Solution solution, List<Violation> violations)
+    private static void CheckCoverage(ProblemInstance instance, Solution solution, List<Violation> violations, bool requireComplete)
     {
         var visitCount = new int[instance.Nodes.Count];
         foreach (var route in solution.Routes)
@@ -100,10 +101,19 @@ public static class SolutionValidator
                 visitCount[v]++;
         }
 
+        var unassigned = new HashSet<int>();
+        foreach (int c in solution.Unassigned)
+        {
+            if (c < 0 || c >= instance.Nodes.Count || instance.Nodes[c].Kind != NodeKind.Customer)
+                violations.Add(new(ViolationKind.InvalidNode, $"Invalid unassigned customer index {c}."));
+            else if (!unassigned.Add(c) || visitCount[c] > 0)
+                violations.Add(new(ViolationKind.ConflictingAssignment, $"Customer '{instance.Nodes[c].Id}' has conflicting or duplicate assignments."));
+        }
+
         foreach (int c in instance.Customers)
         {
             string id = instance.Nodes[c].Id;
-            if (visitCount[c] == 0)
+            if (visitCount[c] == 0 && (requireComplete || !unassigned.Contains(c)))
                 violations.Add(new(ViolationKind.CustomerNotVisited, $"Customer '{id}' is not visited."));
             else if (visitCount[c] > 1)
                 violations.Add(new(ViolationKind.CustomerVisitedTwice, $"Customer '{id}' is visited {visitCount[c]} times."));

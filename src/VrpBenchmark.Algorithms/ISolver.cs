@@ -18,7 +18,10 @@ public sealed record SolverOptions(TimeSpan TimeLimit, int Seed = 1, long? MaxIt
 }
 
 /// <summary>A point on the convergence curve: the best cost known at the given moment.</summary>
-public readonly record struct ProgressPoint(TimeSpan Time, double Cost);
+public readonly record struct ProgressPoint(TimeSpan Time, double Cost)
+{
+    public int UnassignedCount { get; init; }
+}
 
 /// <param name="Iterations">Main-loop iterations of a metaheuristic; null for algorithms without such a loop.</param>
 public sealed record SolverResult(Solution Solution, TimeSpan Elapsed, IReadOnlyList<ProgressPoint> History, long? Iterations = null);

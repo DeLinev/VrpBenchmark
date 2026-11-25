@@ -14,6 +14,9 @@ public static partial class SolutionFile
     [GeneratedRegex(@"^\s*Route\s+\d+\s*(?:\[(?<crew>[^\]]+)\]\s*)?:(?<ids>.*)$", RegexOptions.IgnoreCase)]
     private static partial Regex RouteLine();
 
+    [GeneratedRegex(@"^\s*Unassigned\s*:(?<ids>.*)$", RegexOptions.IgnoreCase)]
+    private static partial Regex UnassignedLine();
+
     public static Solution Read(string path, ProblemInstance instance)
     {
         using var reader = new StreamReader(path);
@@ -28,11 +31,19 @@ public static partial class SolutionFile
 
         while (reader.ReadLine() is { } line)
         {
+            var unassigned = UnassignedLine().Match(line);
+            if (unassigned.Success)
+            {
+                solution.Unassigned.AddRange(ReadCustomers(unassigned.Groups["ids"].Value));
+                continue;
+            }
             var match = RouteLine().Match(line);
             if (!match.Success)
             {
                 if (line.TrimStart().StartsWith("Route ", StringComparison.OrdinalIgnoreCase))
                     throw new FormatException($"Invalid solution route: {line}");
+                if (line.TrimStart().StartsWith("Unassigned", StringComparison.OrdinalIgnoreCase))
+                    throw new FormatException($"Invalid unassigned order list: {line}");
                 continue;
             }
 
@@ -45,12 +56,14 @@ public static partial class SolutionFile
             }
             else if (crewTypes.Count != 1)
                 throw new FormatException("A route in a multi-crew task needs a crew ID in square brackets.");
-            var ids = match.Groups["ids"].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            solution.Routes.Add(new Route(type, ids.Select(id =>
-                nodes.TryGetValue(id, out int index) ? index : instance.IndexOf(NormalizeId(id)))));
+            solution.Routes.Add(new Route(type, ReadCustomers(match.Groups["ids"].Value)));
         }
 
         return solution;
+
+        IEnumerable<int> ReadCustomers(string ids) =>
+            ids.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Select(id =>
+                nodes.TryGetValue(id, out int index) ? index : instance.IndexOf(NormalizeId(id)));
     }
 
     // Some published files pad numeric ids with zeros ("092").
@@ -80,5 +93,7 @@ public static partial class SolutionFile
                 ? $" [{Uri.EscapeDataString(instance.VehicleTypes[route.VehicleType].Id)}]" : "";
             writer.WriteLine($"Route {number++}{crew} : {string.Join(' ', ids)}");
         }
+        if (!solution.IsComplete)
+            writer.WriteLine($"Unassigned : {string.Join(' ', solution.Unassigned.Select(i => instance.Nodes[i].Id))}");
     }
 }

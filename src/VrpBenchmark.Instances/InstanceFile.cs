@@ -17,8 +17,8 @@ public static class InstanceFile
         using var stream = File.OpenRead(path);
         var data = JsonSerializer.Deserialize<CrewFile>(stream, JsonOptions)
             ?? throw new FormatException("Expected a JSON object containing a depot, crews and orders.");
-        if (string.IsNullOrWhiteSpace(data.Name) || data.Crews.Length == 0 || data.Orders.Length == 0)
-            throw new FormatException("A task needs a name, at least one crew and at least one order.");
+        if (string.IsNullOrWhiteSpace(data.Name) || data.Orders.Length == 0)
+            throw new FormatException("A task needs a name and at least one order.");
         if (!double.IsFinite(data.SpeedKmh) || data.SpeedKmh <= 0 || maxCustomers is <= 0)
             throw new FormatException("speedKmh and the customer limit must be positive.");
 

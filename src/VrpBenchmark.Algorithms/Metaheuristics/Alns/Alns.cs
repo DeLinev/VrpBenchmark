@@ -63,6 +63,7 @@ public sealed class Alns : ISolver
     public long LastAcceptedRepeats { get; private set; }
     public long LastVehicleMinimizationIterations { get; private set; }
     public TimeSpan LastDistancePhaseStart { get; private set; }
+    public bool RanDistancePhase { get; private set; }
 
     /// <summary>Final operator weights of the last run, for analysis.</summary>
     public IReadOnlyDictionary<string, double> LastWeights { get; private set; } = new Dictionary<string, double>();
@@ -72,34 +73,39 @@ public sealed class Alns : ISolver
         var stopwatch = Stopwatch.StartNew();
         _random = new Random(options.Seed);
         LastAcceptedRepeats = 0;
-        if (instance.Customers.Count == 0)
+        RanDistancePhase = false;
+        int fleet = instance.VehicleTypes.Sum(v => v.Count);
+        if (instance.Customers.Count == 0 || fleet == 0)
         {
             LastIterations = LastVehicleMinimizationIterations = 0;
             LastDistancePhaseStart = TimeSpan.Zero;
             LastWeights = new Dictionary<string, double>();
-            return new SolverResult(new Solution(), stopwatch.Elapsed, [new ProgressPoint(stopwatch.Elapsed, 0)], 0);
+            var plan = new Solution(unassigned: instance.Customers);
+            return new SolverResult(plan, stopwatch.Elapsed,
+                [new ProgressPoint(stopwatch.Elapsed, 0) { UnassignedCount = plan.Unassigned.Count }], 0);
         }
         var polish = new LocalSearch(instance);
-        InitOperators(instance);
-        int fleet = instance.VehicleTypes.Sum(v => v.Count);
-        if (fleet == 0)
-            throw new InvalidOperationException("No crew is available to serve the orders.");
         double maxDistance = MaxDistance(instance);
         var best = CreateStart(instance, options, fleet, maxDistance, polish);
+        InitOperators(instance, diversifyCoverage: !best.IsComplete);
         long iteration = 0;
         double t0 = -_parameters.InitialWorsening * Math.Max(1, best.Distance) / Math.Log(0.5);
         double phaseBest = best.Cost;
-        while (!best.IsComplete && options.Progress(stopwatch.Elapsed, iteration) < 1)
+        var history = new List<ProgressPoint> { new(stopwatch.Elapsed, best.RouteCost) { UnassignedCount = best.Unassigned.Count } };
+        var construction = best;
+        while (!best.IsComplete && best.Routes.Count > 0 && options.Progress(stopwatch.Elapsed, iteration) < 1)
         {
             iteration++;
-            best = Iterate(best, ref phaseBest, t0);
+            construction = Iterate(construction, ref phaseBest, t0, out var candidate);
+            if (IsBetterPlan(candidate, best))
+            {
+                best = candidate;
+                history.Add(new ProgressPoint(stopwatch.Elapsed, best.RouteCost) { UnassignedCount = best.Unassigned.Count });
+            }
         }
-        if (!best.IsComplete)
-            throw new InvalidOperationException("ALNS did not find a complete plan with the available crews within the search budget.");
 
         bool fleetFirst = _parameters.MinimizeFleetFirst;
         best.MaxRoutes = fleetFirst ? best.Routes.Count : fleet;
-        var history = new List<ProgressPoint> { new(stopwatch.Elapsed, best.Cost) };
 
         double share = _parameters.VehicleMinimizationShare;
         long constructionIterations = iteration;
@@ -114,7 +120,7 @@ public sealed class Alns : ISolver
             minimumRoutes = Math.Max(CapacityBound(instance, demand, v => v.Capacity),
                 CapacityBound(instance, volume, v => v.VolumeCapacity));
         }
-        var reduced = fleetFirst ? WithoutSmallestRoute(best, minimumRoutes) : null;
+        var reduced = fleetFirst && best.IsComplete ? WithoutSmallestRoute(best, minimumRoutes) : null;
         phaseBest = reduced?.Cost ?? 0;
         while (reduced is not null)
         {
@@ -124,7 +130,7 @@ public sealed class Alns : ISolver
 
             iteration++;
             double temperature = t0 * Math.Pow(_parameters.FinalTemperatureRatio, progress / share);
-            reduced = Iterate(reduced, ref phaseBest, temperature);
+            reduced = Iterate(reduced, ref phaseBest, temperature, out _);
 
             if (reduced.IsComplete)
             {
@@ -148,19 +154,19 @@ public sealed class Alns : ISolver
             MaxIterations = options.MaxIterations - iteration,
         };
 
-        while (true)
+        while (best.IsComplete)
         {
             var elapsed = stopwatch.Elapsed;
             if (options.Progress(elapsed, iteration) >= 1)
                 break;
 
+            RanDistancePhase = true;
             double progress = distanceBudget.Progress(elapsed - LastDistancePhaseStart, iteration - distanceStartIteration);
             iteration++;
             double temperature = t0 * Math.Pow(_parameters.FinalTemperatureRatio, progress);
-            current = Iterate(current, ref phaseBest, temperature);
+            current = Iterate(current, ref phaseBest, temperature, out _);
 
-            if (current.IsComplete && (fleetFirst && current.Routes.Count < best.Routes.Count ||
-                (!fleetFirst || current.Routes.Count == best.Routes.Count) && current.Cost < best.Cost - 1e-9))
+            if (IsBetterPlan(current, best))
             {
                 best = current.Clone();
                 if (fleetFirst)
@@ -175,14 +181,29 @@ public sealed class Alns : ISolver
             .ToDictionary(x => x.Name, x => x.Item2);
 
         var polished = polish.Improve(best.ToSolution());
-        if (instance.VehicleTypes.Count > 1)
+        if (instance.VehicleTypes.Count > 1 || !polished.IsComplete)
         {
-            var final = new PartialSolution(instance, polished.UsedRoutes.Select(r => new RouteState(instance, r.VehicleType, r.Visits)), [], fleet, best.UnassignedPenalty);
+            var final = new PartialSolution(instance, polished.UsedRoutes.Select(r => new RouteState(instance, r.VehicleType, r.Visits)),
+                polished.Unassigned, fleet, best.UnassignedPenalty);
             CrewAssignment.Improve(final);
+            if (!final.IsComplete)
+            {
+                new InsertionRepair(2).Repair(final, _random);
+                CrewAssignment.Improve(final);
+            }
             polished = final.ToSolution();
         }
-        history.Add(new ProgressPoint(stopwatch.Elapsed, Evaluator.Evaluate(instance, polished).Cost));
+        history.Add(new ProgressPoint(stopwatch.Elapsed, Evaluator.Evaluate(instance, polished).Cost) { UnassignedCount = polished.Unassigned.Count });
         return new SolverResult(polished, stopwatch.Elapsed, history, iteration);
+    }
+
+    private bool IsBetterPlan(PartialSolution candidate, PartialSolution best)
+    {
+        if (candidate.Unassigned.Count != best.Unassigned.Count)
+            return candidate.Unassigned.Count < best.Unassigned.Count;
+        if (_parameters.MinimizeFleetFirst && candidate.Routes.Count != best.Routes.Count)
+            return candidate.Routes.Count < best.Routes.Count;
+        return candidate.RouteCost < best.RouteCost - 1e-9;
     }
 
     private static int CapacityBound(ProblemInstance instance, double demand, Func<VehicleType, double> capacity)
@@ -220,7 +241,7 @@ public sealed class Alns : ISolver
         return plan;
     }
 
-    private PartialSolution Iterate(PartialSolution current, ref double phaseBest, double temperature)
+    private PartialSolution Iterate(PartialSolution current, ref double phaseBest, double temperature, out PartialSolution candidate)
     {
         int d = Roulette(_destroyWeights);
         int r = Roulette(_repairWeights);
@@ -229,7 +250,7 @@ public sealed class Alns : ISolver
         int min = Math.Min(_parameters.MinRemoved, customers);
         int max = Math.Max(min, (int)(_parameters.MaxRemovedShare * customers));
 
-        var candidate = current.Clone();
+        candidate = current.Clone();
         _destroy[d].Destroy(candidate, _random.Next(min, max + 1), _random);
         _repair[r].Repair(candidate, _random);
         CrewAssignment.Improve(candidate);
@@ -265,10 +286,12 @@ public sealed class Alns : ISolver
         return accepted ? candidate : current;
     }
 
-    private void InitOperators(ProblemInstance instance)
+    private void InitOperators(ProblemInstance instance, bool diversifyCoverage)
     {
         _destroy = [new RandomRemoval(), new WorstRemoval(), new ShawRemoval(instance), new RouteRemoval()];
         _repair = [new InsertionRepair(1), new InsertionRepair(2), new InsertionRepair(3)];
+        if (diversifyCoverage)
+            _repair = [.. _repair, new InsertionRepair(1, randomOrder: true)];
         _destroyWeights = [.. _destroy.Select(_ => 1.0)];
         _repairWeights = [.. _repair.Select(_ => 1.0)];
         _destroyScores = new double[_destroy.Length];

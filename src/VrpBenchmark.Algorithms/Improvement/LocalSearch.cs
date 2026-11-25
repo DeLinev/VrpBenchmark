@@ -52,7 +52,7 @@ public sealed class LocalSearch
         {
         }
 
-        return new Solution(_routes.Where(r => !r.IsEmpty).Select(r => r.ToRoute()));
+        return new Solution(_routes.Where(r => !r.IsEmpty).Select(r => r.ToRoute()), start.Unassigned);
     }
 
     /// <summary>Moves a chain of 1..MaxChainLength consecutive customers to another position, in the same or another route.</summary>

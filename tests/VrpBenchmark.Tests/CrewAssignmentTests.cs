@@ -130,8 +130,9 @@ public class CrewAssignmentTests
     public void Insufficient_fleet_does_not_return_an_overbooked_plan()
     {
         var instance = Instance([Van, Truck with { Count = 0 }], Order(1, 700, 1), Order(2, 700, 1));
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            new Alns().Solve(instance, new SolverOptions(TimeSpan.FromSeconds(1), MaxIterations: 20)));
-        Assert.Contains("complete plan", error.Message);
+        var plan = Solve(instance);
+        Assert.Single(plan.Unassigned);
+        Assert.Single(plan.UsedRoutes);
+        Assert.False(SolutionValidator.Validate(instance, plan, requireComplete: true).IsFeasible);
     }
 }

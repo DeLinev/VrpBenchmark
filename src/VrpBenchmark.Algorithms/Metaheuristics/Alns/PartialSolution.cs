@@ -30,14 +30,15 @@ public sealed class PartialSolution
 
     public bool IsComplete => Unassigned.Count == 0;
 
-    public double Cost => Routes.Sum(r => r.Cost) + UnassignedPenalty * Unassigned.Count;
+    public double RouteCost => Routes.Sum(r => r.Cost);
+    public double Cost => RouteCost + UnassignedPenalty * Unassigned.Count;
 
     public double Distance => Routes.Sum(r => r.Whole.Distance);
 
     public PartialSolution Clone() =>
         new(Instance, Routes.Select(r => r.Clone()), Unassigned, MaxRoutes, UnassignedPenalty);
 
-    public Solution ToSolution() => new(Routes.Where(r => !r.IsEmpty).Select(r => r.ToRoute()));
+    public Solution ToSolution() => new(Routes.Where(r => !r.IsEmpty).Select(r => r.ToRoute()), Unassigned);
 
     /// <summary>Compares the nonempty search routes regardless of fleet list order.
     /// Unassigned customers are the complement of the visits in the same instance.</summary>

@@ -17,11 +17,11 @@ public interface IRepairOperator
 /// Σ_{h=2..k} (c_h − c_1), where c_h is its best insertion cost into its h-th best route.
 /// Customers with fewer than k feasible routes get the highest priority.
 /// </summary>
-public sealed class InsertionRepair(int regret) : IRepairOperator
+public sealed class InsertionRepair(int regret, bool randomOrder = false) : IRepairOperator
 {
     private const double Missing = 1e9;
 
-    public string Name => regret == 1 ? "greedy" : $"regret-{regret}";
+    public string Name => randomOrder ? "random-order" : regret == 1 ? "greedy" : $"regret-{regret}";
 
     public void Repair(PartialSolution solution, Random random)
     {
@@ -50,6 +50,9 @@ public sealed class InsertionRepair(int regret) : IRepairOperator
                     chosenBest = best;
                     chosen = u;
                     chosenColumn = column;
+                    // The bank was shuffled. Trying a different order first can displace a cheap, bulky order.
+                    if (randomOrder)
+                        break;
                 }
             }
             if (chosen < 0)

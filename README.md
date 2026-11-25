@@ -7,7 +7,7 @@ The compared methods are Solomon I1 with local search (`i1-ls`), simulated annea
 ## Data and results
 
 - [data/solomon](data/solomon): instances, best known solutions (BKS), and [data sources](data/solomon/SOURCES.md).
-- [Custom crew tasks](data/crews/README.md) include five editable JSON examples for the `info`, `solve`, and `validate` commands.
+- [Custom crew tasks](data/crews/README.md) include editable JSON examples for complete plans and a day with more orders than the available crew can serve.
 - [results/main-60s](results/main-60s): the main experiment: 60 s, 10 repetitions each of SA, ALNS, and OR-Tools; one I1+LS run per instance. 1,736 runs in total.
 - [results/conv-60s](results/conv-60s): a separate series for convergence curves: 60 s, 3 repetitions each of SA, ALNS, and OR-Tools on every instance, 504 runs in total.
 - [results/main-60s/analysis](results/main-60s/analysis): CSV tables, PNG figures, and a [text summary](results/main-60s/analysis/tables.md).

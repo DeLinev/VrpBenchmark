@@ -1,0 +1,16 @@
+{
+  "name": "One van, six orders",
+  "speedKmh": 40,
+  "depot": {"id": "DEPOT", "x": 0, "y": 0, "window": {"start": 480, "end": 1080}},
+  "crews": [
+    {"id": "day-van", "capacityKg": 800, "volumeCapacityM3": 4, "shift": {"start": 480, "end": 1020}, "fixedCost": 100, "costPerKm": 2}
+  ],
+  "orders": [
+    {"id": "near-pallet", "x": 1, "y": 0, "window": {"start": 480, "end": 960}, "weightKg": 700, "volumeM3": 2, "serviceMinutes": 8},
+    {"id": "shop-a", "x": 4, "y": 0, "window": {"start": 480, "end": 960}, "weightKg": 400, "volumeM3": 1, "serviceMinutes": 8},
+    {"id": "shop-b", "x": 5, "y": 0, "window": {"start": 480, "end": 960}, "weightKg": 380, "volumeM3": 2, "serviceMinutes": 8},
+    {"id": "press", "x": 4, "y": 2, "window": {"start": 480, "end": 960}, "weightKg": 1100, "volumeM3": 2, "serviceMinutes": 8},
+    {"id": "foam", "x": 4, "y": 1, "window": {"start": 480, "end": 960}, "weightKg": 10, "volumeM3": 6, "serviceMinutes": 8},
+    {"id": "night", "x": 2, "y": 3, "window": {"start": 1030, "end": 1060}, "weightKg": 10, "volumeM3": 1, "serviceMinutes": 8}
+  ]
+}
