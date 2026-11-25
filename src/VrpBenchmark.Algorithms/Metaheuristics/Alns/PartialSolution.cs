@@ -39,6 +39,27 @@ public sealed class PartialSolution
 
     public Solution ToSolution() => new(Routes.Where(r => !r.IsEmpty).Select(r => r.ToRoute()));
 
+    /// <summary>Compares the nonempty search routes regardless of fleet list order.
+    /// Unassigned customers are the complement of the visits in the same instance.</summary>
+    public bool HasSameRoutesAs(PartialSolution other)
+    {
+        if (Instance != other.Instance || Routes.Count != other.Routes.Count || Unassigned.Count != other.Unassigned.Count)
+            return false;
+
+        for (int i = 0; i < Routes.Count; i++)
+        {
+            var route = Routes[i];
+            var match = other.Routes[i];
+            // A route rebuilt by repair can move to the end. Its first customer uniquely identifies it.
+            if (match.Visits[0] != route.Visits[0])
+                match = other.Routes.Find(r => r.Visits[0] == route.Visits[0]);
+
+            if (match is null || route.VehicleTypeIndex != match.VehicleTypeIndex || !route.Visits.SequenceEqual(match.Visits))
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>Removes the given customers from their routes and puts them into the request bank.</summary>
     public void Remove(IReadOnlyCollection<int> customers)
     {

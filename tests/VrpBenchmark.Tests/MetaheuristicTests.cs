@@ -77,6 +77,36 @@ public class MetaheuristicTests
     }
 
     [Fact]
+    public void Reordering_routes_or_the_request_bank_preserves_the_plan()
+    {
+        var instance = TestData.Solomon("c101", new SolomonOptions { MaxCustomers = 6 });
+        var current = new PartialSolution(instance,
+            [new RouteState(instance, 0, [1, 2]), new RouteState(instance, 0, [3, 4])], [5, 6], 2, 1000);
+        var candidate = current.Clone();
+        candidate.Routes.Reverse();
+        candidate.Unassigned.Reverse();
+        Assert.True(current.HasSameRoutesAs(candidate));
+
+        candidate.Routes[0].Visits.Reverse();
+        Assert.False(current.HasSameRoutesAs(candidate));
+    }
+
+    [Theory]
+    [InlineData(1, 1, 0.05)] // The only possible route is rebuilt; both weights fall to their floor.
+    [InlineData(2, 0, 13)]   // Repair reverses the visits on an equal-length symmetric tour.
+    public void Accepted_equal_cost_plans_earn_points_only_when_visits_change(int customers, int repeats, double weight)
+    {
+        var data = TestData.Solomon("c101", new SolomonOptions { MaxCustomers = customers });
+        var nodes = data.Nodes.Select(n => n with { Window = data.Nodes[0].Window }).ToArray();
+        var instance = new ProblemInstance("equal tours", nodes, data.VehicleTypes, data.Matrix);
+        var solver = new Alns(new AlnsParameters { SegmentLength = 1, ReactionFactor = 1 });
+        solver.Solve(instance, Iterations(1));
+
+        Assert.Equal(repeats, solver.LastAcceptedRepeats);
+        Assert.Equal(2, solver.LastWeights.Values.Count(w => w == weight));
+    }
+
+    [Fact]
     public void Same_seed_gives_the_same_result()
     {
         var instance = TestData.Solomon("r102");

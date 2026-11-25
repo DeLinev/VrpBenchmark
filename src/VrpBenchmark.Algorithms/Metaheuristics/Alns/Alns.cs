@@ -20,7 +20,7 @@ public sealed record AlnsParameters
     public double InitialWorsening { get; init; } = 0.05;
     public double FinalTemperatureRatio { get; init; } = 0.002;
 
-    /// <summary>Scores: new global best / better than current / accepted although worse.</summary>
+    /// <summary>Scores for a changed plan: new phase best / better than current / otherwise accepted.</summary>
     public double ScoreBest { get; init; } = 33;
     public double ScoreBetter { get; init; } = 9;
     public double ScoreAccepted { get; init; } = 13;
@@ -56,6 +56,7 @@ public sealed class Alns : ISolver
     public string Name => "ALNS";
 
     public long LastIterations { get; private set; }
+    public long LastAcceptedRepeats { get; private set; }
     public long LastVehicleMinimizationIterations { get; private set; }
     public TimeSpan LastDistancePhaseStart { get; private set; }
 
@@ -66,6 +67,7 @@ public sealed class Alns : ISolver
     {
         var stopwatch = Stopwatch.StartNew();
         _random = new Random(options.Seed);
+        LastAcceptedRepeats = 0;
         InitOperators(instance);
 
         var start = new I1LocalSearch().Solve(instance, options).Solution;
@@ -167,7 +169,9 @@ public sealed class Alns : ISolver
         bool accepted = candidateCost < currentCost
             || _random.NextDouble() < Math.Exp(-(candidateCost - currentCost) / temperature);
 
-        if (candidateCost < phaseBest - 1e-9)
+        if (accepted && current.HasSameRoutesAs(candidate))
+            LastAcceptedRepeats++;
+        else if (candidateCost < phaseBest - 1e-9)
         {
             phaseBest = candidateCost;
             score = _parameters.ScoreBest;
