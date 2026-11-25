@@ -1,0 +1,15 @@
+{
+  "name": "Morning and evening shifts",
+  "speedKmh": 40,
+  "depot": {"id": "DEPOT", "x": 0, "y": 0, "window": {"start": 420, "end": 1200}},
+  "crews": [
+    {"id": "morning-van", "capacityKg": 800, "volumeCapacityM3": 4, "shift": {"start": 420, "end": 780}, "fixedCost": 100, "costPerKm": 2},
+    {"id": "evening-van", "capacityKg": 800, "volumeCapacityM3": 4, "shift": {"start": 780, "end": 1200}, "fixedCost": 110, "costPerKm": 2}
+  ],
+  "orders": [
+    {"id": "am-01", "x": 4, "y": 2, "window": {"start": 465, "end": 510}, "weightKg": 80, "volumeM3": 0.4, "serviceMinutes": 8},
+    {"id": "am-02", "x": 6, "y": 2, "window": {"start": 520, "end": 585}, "weightKg": 160, "volumeM3": 0.8, "serviceMinutes": 8},
+    {"id": "pm-01", "x": -3, "y": 4, "window": {"start": 960, "end": 1020}, "weightKg": 100, "volumeM3": 0.9, "serviceMinutes": 8},
+    {"id": "pm-02", "x": -5, "y": 7, "window": {"start": 1030, "end": 1100}, "weightKg": 60, "volumeM3": 0.4, "serviceMinutes": 8}
+  ]
+}

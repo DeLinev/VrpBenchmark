@@ -1,0 +1,23 @@
+# Задачі доставки з екіпажами
+
+Скопіюйте один із п’яти JSON-файлів у [instances](instances/) і змініть депо, екіпажі та замовлення. Один файл описує план одного депо на день. Кожен запис у `crews` — окрема пара «водій + машина» з одним доступним рейсом.
+
+| Поле | Зміст |
+|---|---|
+| `name`, `speedKmh` | Назва задачі й швидкість у км/год. Відстані обчислюються на площині за координатами в кілометрах. |
+| `depot` | Унікальний `id`, координати `x`, `y` та час роботи `window`. |
+| `crews[]` | `id`, вантажопідйомність `capacityKg`, місткість кузова `volumeCapacityM3`, зміна `shift`, фіксована плата `fixedCost` і тариф за кілометр `costPerKm`. |
+| `orders[]` | `id`, координати, вікно початку обслуговування `window`, вага `weightKg`, об’єм `volumeM3` та тривалість обслуговування `serviceMinutes`. |
+
+Для `window` і `shift` задайте `start` та `end` у хвилинах від півночі. Наприклад, 480 і 1020 відповідають 08:00 і 17:00. Ідентифікатори є рядками без пробілів. Приклади охоплюють легкі вантажі, обмеження за об’ємом і вагою, окремі зміни та змішаний день депо.
+
+З кореня репозиторію в PowerShell:
+
+```powershell
+$task = 'data/crews/instances/04-split-shifts.json'
+dotnet run -c Release --project src/VrpBenchmark.Runner -- info $task
+dotnet run -c Release --project src/VrpBenchmark.Runner -- solve alns $task --time 5 --out plan.sol
+dotnet run -c Release --project src/VrpBenchmark.Runner -- validate $task plan.sol
+```
+
+Рядок `Route 1 [morning-van] : am-01 am-02` призначає ранковому екіпажу два замовлення в указаному порядку.

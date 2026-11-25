@@ -1,0 +1,14 @@
+{
+  "name": "Heavy equipment",
+  "speedKmh": 40,
+  "depot": {"id": "DEPOT", "x": 0, "y": 0, "window": {"start": 420, "end": 1200}},
+  "crews": [
+    {"id": "van-01", "capacityKg": 800, "volumeCapacityM3": 4, "shift": {"start": 480, "end": 1020}, "fixedCost": 100, "costPerKm": 2},
+    {"id": "truck-02", "capacityKg": 1800, "volumeCapacityM3": 12, "shift": {"start": 480, "end": 1020}, "fixedCost": 220, "costPerKm": 4}
+  ],
+  "orders": [
+    {"id": "motor", "x": 3, "y": 7, "window": {"start": 500, "end": 960}, "weightKg": 1050, "volumeM3": 1.4, "serviceMinutes": 8},
+    {"id": "tools", "x": 4, "y": 6, "window": {"start": 500, "end": 960}, "weightKg": 330, "volumeM3": 0.5, "serviceMinutes": 8},
+    {"id": "spares", "x": 5, "y": 3, "window": {"start": 500, "end": 960}, "weightKg": 280, "volumeM3": 0.6, "serviceMinutes": 8}
+  ]
+}

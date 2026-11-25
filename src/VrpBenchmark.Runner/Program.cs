@@ -14,26 +14,35 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var options = CommandOptions.Parse(args, out var positional);
 
-return positional switch
+try
 {
-    ["info", var instancePath] => Info(instancePath),
-    ["validate", var instancePath, var solutionPath] => Validate(instancePath, solutionPath),
-    ["check-bks"] => CheckBks(DataDirectory.Find()),
-    ["check-bks", var dataDir] => CheckBks(dataDir),
-    ["solve", var algorithm, var instancePath] => Solve(algorithm, instancePath, options),
-    ["run-all", var algorithm] => RunAll(algorithm, DataDirectory.Find(), options),
-    ["benchmark"] => RunBenchmark(DataDirectory.Find(), options),
-    _ => Usage(),
-};
+    return positional switch
+    {
+        ["info", var instancePath] => Info(instancePath),
+        ["validate", var instancePath, var solutionPath] => Validate(instancePath, solutionPath),
+        ["check-bks"] => CheckBks(DataDirectory.Find()),
+        ["check-bks", var dataDir] => CheckBks(dataDir),
+        ["solve", var algorithm, var instancePath] => Solve(algorithm, instancePath, options),
+        ["run-all", var algorithm] => RunAll(algorithm, DataDirectory.Find(), options),
+        ["benchmark"] => RunBenchmark(DataDirectory.Find(), options),
+        _ => Usage(),
+    };
+}
+catch (Exception ex) when (ex is FormatException or System.Text.Json.JsonException or IOException or
+    KeyNotFoundException or InvalidOperationException or ArgumentException)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 1;
+}
 
 static int Usage()
 {
     Console.WriteLine($"""
         Usage:
-          info <instance.txt>                     Print a summary of a Solomon instance
-          validate <instance.txt> <solution.sol>  Check a solution against all constraints
+          info <instance>                         Show a Solomon (.txt) or crew (.json) task
+          validate <instance> <solution.sol>      Check a solution against all constraints
           check-bks [data-dir]                    Validate all published best known solutions
-          solve <algorithm> <instance.txt>        Solve one instance and validate the result
+          solve <algorithm> <instance>            Solve one instance and validate the result
           run-all <algorithm>                     Solve all 56 Solomon instances, compare with BKS
           benchmark --name <name>                 Full experiment: algorithms x instances x seeds -> results/<name>/
 
@@ -57,12 +66,19 @@ static int Usage()
 
 static int Info(string instancePath)
 {
-    var instance = SolomonReader.Read(instancePath);
+    var instance = InstanceFile.Read(instancePath);
     var vehicle = instance.VehicleTypes[0];
     var customers = instance.Customers.Select(c => instance.Nodes[c]).ToList();
 
     Console.WriteLine($"Instance        : {instance.Name}");
     Console.WriteLine($"Customers       : {customers.Count}");
+    if (InstanceFile.IsCrewFile(instancePath))
+    {
+        Console.WriteLine($"Total orders    : {customers.Sum(c => c.Demand)} kg, {customers.Sum(c => c.Volume)} m3");
+        foreach (var crew in instance.VehicleTypes)
+            Console.WriteLine($"Crew {crew.Id}: {crew.Capacity} kg, {crew.VolumeCapacity} m3, shift [{crew.Shift.Start}, {crew.Shift.End}], fixed {crew.FixedCost}, per km {crew.CostPerDistance}");
+        return 0;
+    }
     Console.WriteLine($"Vehicles        : {vehicle.Count} x capacity {vehicle.Capacity}");
     Console.WriteLine($"Planning horizon: [{vehicle.Shift.Start}, {vehicle.Shift.End}]");
     Console.WriteLine($"Total demand    : {customers.Sum(c => c.Demand)} (lower bound {Math.Ceiling(customers.Sum(c => c.Demand) / vehicle.Capacity)} vehicles)");
@@ -72,7 +88,7 @@ static int Info(string instancePath)
 
 static int Validate(string instancePath, string solutionPath)
 {
-    var instance = SolomonReader.Read(instancePath);
+    var instance = InstanceFile.Read(instancePath);
     var solution = SolutionFile.Read(solutionPath, instance);
     var report = SolutionValidator.Validate(instance, solution);
 
@@ -129,7 +145,10 @@ static int CheckBks(string dataDir)
 static int Solve(string algorithm, string instancePath, CommandOptions options)
 {
     var solver = SolverCatalog.Create(algorithm);
-    var instance = SolomonReader.Read(instancePath, new SolomonOptions { MaxCustomers = options.Customers });
+    var instance = InstanceFile.Read(instancePath, options.Customers);
+    bool crewFile = InstanceFile.IsCrewFile(instancePath);
+    if (crewFile && instance.VehicleTypes.Count > 1 && solver is not (Alns or VrpBenchmark.OrTools.OrToolsSolver))
+        throw new ArgumentException("Use alns or ortools for a task with multiple crews.");
     var result = solver.Solve(instance, options.ToSolverOptions());
     var report = SolutionValidator.Validate(instance, result.Solution);
 
@@ -147,13 +166,18 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
         Console.WriteLine($"Moves    : relocate {ls.Relocate}, swap {ls.Swap}, 2-opt* {ls.TwoOptStar}, 2-opt {ls.TwoOpt}");
     PrintReport(instance, report);
 
-    var bks = BksTable.Load(DataDirectory.SolomonBksTable(DataDirectory.Find()));
-    if (options.Customers is null && report.Stats is { } s && bks.TryGet(instance.Name, out var entry))
+    if (crewFile)
+    {
+        foreach (var route in result.Solution.UsedRoutes)
+            Console.WriteLine($"Crew {instance.VehicleTypes[route.VehicleType].Id}: {string.Join(" -> ", route.Visits.Select(i => instance.Nodes[i].Id))}");
+    }
+    else if (options.Customers is null && report.Stats is { } s &&
+        BksTable.Load(DataDirectory.SolomonBksTable(DataDirectory.Find())).TryGet(instance.Name, out var entry))
         Console.WriteLine($"BKS      : {entry.Vehicles} vehicles, {entry.Distance:0.00} (gap {ForDisplay(Gap.Percent(s.Distance, entry.Distance), 2):0.00}%)");
 
     if (options.Output is { } output)
     {
-        SolutionFile.Write(output, instance, result.Solution, solver.Name);
+        SolutionFile.Write(output, instance, result.Solution, solver.Name, includeCrew: crewFile);
         Console.WriteLine($"Saved to : {output}");
     }
 
