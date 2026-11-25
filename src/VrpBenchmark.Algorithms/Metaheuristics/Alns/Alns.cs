@@ -8,8 +8,9 @@ namespace VrpBenchmark.Algorithms.Metaheuristics.Alns;
 
 public sealed record AlnsParameters
 {
-    /// <summary>Share of the budget spent on removing vehicles before minimising distance.</summary>
+    /// <summary>Maximum share of the budget spent on removing vehicles before minimising distance.</summary>
     public double VehicleMinimizationShare { get; init; } = 0.5;
+    public bool StopAtCapacityBound { get; init; } = true;
 
     /// <summary>Removed customers per iteration: uniformly from [MinRemoved, MaxRemovedShare · n].</summary>
     public int MinRemoved { get; init; } = 4;
@@ -55,6 +56,8 @@ public sealed class Alns : ISolver
     public string Name => "ALNS";
 
     public long LastIterations { get; private set; }
+    public long LastVehicleMinimizationIterations { get; private set; }
+    public TimeSpan LastDistancePhaseStart { get; private set; }
 
     /// <summary>Final operator weights of the last run, for analysis.</summary>
     public IReadOnlyDictionary<string, double> LastWeights { get; private set; } = new Dictionary<string, double>();
@@ -77,7 +80,15 @@ public sealed class Alns : ISolver
         long iteration = 0;
 
         // Phase 1: vehicle minimisation.
-        var reduced = WithoutSmallestRoute(best);
+        // Each route can carry up to Capacity + Epsilon under the solver's feasibility checks.
+        double minimumRoutes = 1;
+        if (_parameters.StopAtCapacityBound)
+        {
+            double demand = instance.Customers.Sum(i => instance.Nodes[i].Demand);
+            double capacity = instance.VehicleTypes[0].Capacity + Evaluator.Epsilon;
+            minimumRoutes = Math.Max(1, Math.Ceiling(demand / capacity));
+        }
+        var reduced = WithoutSmallestRoute(best, minimumRoutes);
         double phaseBest = reduced?.Cost ?? 0;
         while (reduced is not null)
         {
@@ -93,7 +104,7 @@ public sealed class Alns : ISolver
             {
                 best = reduced.Clone();
                 history.Add(new ProgressPoint(stopwatch.Elapsed, best.Cost));
-                reduced = WithoutSmallestRoute(best);
+                reduced = WithoutSmallestRoute(best, minimumRoutes);
                 phaseBest = reduced?.Cost ?? 0;
             }
         }
@@ -102,15 +113,23 @@ public sealed class Alns : ISolver
         var current = best.Clone();
         current.MaxRoutes = best.Routes.Count;
         phaseBest = current.Cost;
+        LastVehicleMinimizationIterations = iteration;
+        LastDistancePhaseStart = stopwatch.Elapsed;
+        var distanceBudget = options with
+        {
+            TimeLimit = options.TimeLimit - LastDistancePhaseStart,
+            MaxIterations = options.MaxIterations - iteration,
+        };
 
         while (true)
         {
-            double progress = options.Progress(stopwatch.Elapsed, iteration);
-            if (progress >= 1)
+            var elapsed = stopwatch.Elapsed;
+            if (options.Progress(elapsed, iteration) >= 1)
                 break;
 
+            double progress = distanceBudget.Progress(elapsed - LastDistancePhaseStart, iteration - LastVehicleMinimizationIterations);
             iteration++;
-            double temperature = t0 * Math.Pow(_parameters.FinalTemperatureRatio, (progress - share) / (1 - share));
+            double temperature = t0 * Math.Pow(_parameters.FinalTemperatureRatio, progress);
             current = Iterate(current, ref phaseBest, temperature);
 
             if (current.IsComplete && current.Cost < best.Cost - 1e-9)
@@ -217,10 +236,10 @@ public sealed class Alns : ISolver
         return weights.Length - 1;
     }
 
-    /// <summary>Copy of the solution without its smallest route and with the fleet capped accordingly; null if one route is left.</summary>
-    private static PartialSolution? WithoutSmallestRoute(PartialSolution solution)
+    /// <summary>Tries a smaller fleet only while another reduction is possible.</summary>
+    private static PartialSolution? WithoutSmallestRoute(PartialSolution solution, double minimumRoutes)
     {
-        if (solution.Routes.Count <= 1)
+        if (solution.Routes.Count <= minimumRoutes)
             return null;
 
         var copy = solution.Clone();

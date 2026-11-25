@@ -33,7 +33,7 @@ public readonly record struct RunKey(string Algorithm, string Instance, int Seed
 public static class Benchmark
 {
     public const string RunsHeader =
-        "algorithm,instance,class,seed,time_limit_s,elapsed_s,iterations,feasible,vehicles,distance,cost,bks_vehicles,bks_distance,vehicle_diff,gap_pct";
+        "algorithm,instance,class,seed,time_limit_s,elapsed_s,iterations,feasible,vehicles,distance,cost,bks_vehicles,bks_distance,vehicle_diff,gap_pct,alns_distance_phase_start_s";
 
     public const string HistoryHeader = "algorithm,instance,seed,time_s,cost,vehicles,distance";
 
@@ -108,6 +108,9 @@ public static class Benchmark
         if (OperatingSystem.IsWindows())
             SetThreadExecutionState(EsContinuous | EsSystemRequired);
 
+        // Older series can be resumed using their original CSV layout.
+        string? existingHeader = File.Exists(runsPath) ? File.ReadLines(runsPath).FirstOrDefault() : null;
+        bool recordPhaseStart = existingHeader is null || existingHeader == RunsHeader;
         var runs = OpenAppend(runsPath, RunsHeader);
         var history = OpenAppend(historyPath, HistoryHeader);
         var writeLock = new object();
@@ -147,7 +150,8 @@ public static class Benchmark
         string Execute(RunKey key, string dataDir, string dir, BksTable bks, BenchmarkConfig config, StreamWriter history, object writeLock)
         {
             var instance = SolomonReader.Read(DataDirectory.SolomonInstance(dataDir, key.Instance));
-            var result = SolverCatalog.Create(key.Algorithm).Solve(instance, new SolverOptions(TimeSpan.FromSeconds(config.TimeLimitSeconds), key.Seed));
+            var solver = SolverCatalog.Create(key.Algorithm);
+            var result = solver.Solve(instance, new SolverOptions(TimeSpan.FromSeconds(config.TimeLimitSeconds), key.Seed));
             var report = SolutionValidator.Validate(instance, result.Solution);
             var s = report.Stats!;
             bks.TryGet(instance.Name, out var best);
@@ -164,6 +168,8 @@ public static class Benchmark
                 s.VehiclesUsed.ToString(Inv), s.Distance.ToString("0.####", Inv), s.Cost.ToString("0.####", Inv),
                 best?.Vehicles.ToString(Inv) ?? "", best?.Distance.ToString(Inv) ?? "",
                 best is null ? "" : (s.VehiclesUsed - best.Vehicles).ToString(Inv), gap.ToString("0.####", Inv));
+            if (recordPhaseStart)
+                row += "," + (solver is Alns alns ? alns.LastDistancePhaseStart.TotalSeconds.ToString("0.######", Inv) : "");
 
             double fixedCost = instance.VehicleTypes[0].FixedCost;
             var points = Thin(result.History, fixedCost);

@@ -48,6 +48,34 @@ public class MetaheuristicTests
         Assert.True(Cost(instance, result.Solution) <= baseline + 1e-6);
     }
 
+    [Theory]
+    [InlineData("c101", true, 0)]    // 1810 units of demand require all ten starting routes.
+    [InlineData("c101", false, 50)]
+    [InlineData("r101", true, 50)]   // Time windows require more routes than the capacity bound.
+    public void Alns_uses_the_remaining_budget_for_distance(string name, bool stopAtBound, int fleetIterations)
+    {
+        var instance = TestData.Solomon(name);
+        var solver = new Alns(new AlnsParameters { StopAtCapacityBound = stopAtBound });
+        var result = solver.Solve(instance, Iterations(100));
+
+        Assert.Equal(fleetIterations, solver.LastVehicleMinimizationIterations);
+        Assert.Equal(100, result.Iterations);
+        Assert.True(SolutionValidator.Validate(instance, result.Solution).IsFeasible);
+    }
+
+    [Fact]
+    public void Alns_switches_after_reducing_the_fleet_to_the_capacity_bound()
+    {
+        var instance = TestData.Solomon("r208");
+        var solver = new Alns();
+        var result = solver.Solve(instance, Iterations(400));
+
+        Assert.InRange(solver.LastVehicleMinimizationIterations, 1, 199);
+        Assert.Equal(400, result.Iterations);
+        Assert.Equal(2, result.Solution.UsedRoutes.Count());
+        Assert.True(SolutionValidator.Validate(instance, result.Solution).IsFeasible);
+    }
+
     [Fact]
     public void Same_seed_gives_the_same_result()
     {

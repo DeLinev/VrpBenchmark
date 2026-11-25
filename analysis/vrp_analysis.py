@@ -463,7 +463,10 @@ def alns_phase_switch(exp: Experiment) -> float | None:
     if "alns" not in exp.algorithms or not info.exists():
         return None
     meta = json.loads(info.read_text(encoding="utf-8"))
-    return meta["timeLimitSeconds"] * meta["parameters"]["alns"]["VehicleMinimizationShare"]
+    parameters = meta["parameters"]["alns"]
+    if parameters.get("StopAtCapacityBound", False):
+        return None  # Adaptive runs have individual switch times.
+    return meta["timeLimitSeconds"] * parameters["VehicleMinimizationShare"]
 
 
 def _end_labels(ax: plt.Axes, series: dict[str, pd.Series]) -> None:

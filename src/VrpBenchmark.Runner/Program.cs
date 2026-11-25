@@ -138,7 +138,10 @@ static int Solve(string algorithm, string instancePath, CommandOptions options)
     if (solver is SimulatedAnnealing sa)
         Console.WriteLine($"Iterations: {sa.LastIterations:N0}");
     if (solver is Alns alns)
+    {
+        Console.WriteLine($"Distance phase: {alns.LastDistancePhaseStart.TotalSeconds:0.000} s after start, after {alns.LastVehicleMinimizationIterations:N0} fleet iterations");
         Console.WriteLine($"Iterations: {alns.LastIterations:N0}; weights: {string.Join(", ", alns.LastWeights.Select(w => $"{w.Key} {w.Value:0.00}"))}");
+    }
     if (solver is I1LocalSearch { LastStats: { } ls })
         Console.WriteLine($"Moves    : relocate {ls.Relocate}, swap {ls.Swap}, 2-opt* {ls.TwoOptStar}, 2-opt {ls.TwoOpt}");
     PrintReport(instance, report);
