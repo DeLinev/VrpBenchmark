@@ -16,4 +16,7 @@ public sealed record Node(
     double Y,
     double Demand,
     TimeWindow Window,
-    double ServiceTime);
+    double ServiceTime)
+{
+    public double Volume { get; init; }
+}

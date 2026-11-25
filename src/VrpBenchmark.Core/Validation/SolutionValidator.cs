@@ -14,6 +14,7 @@ public enum ViolationKind
     CapacityExceeded,
     TimeWindowMissed,
     LateReturnToDepot,
+    VolumeExceeded,
 }
 
 public sealed record Violation(ViolationKind Kind, string Message);
@@ -133,10 +134,16 @@ public static class SolutionValidator
         var matrix = instance.Matrix;
 
         double load = route.Visits.Sum(v => nodes[v].Demand);
+        double volume = route.Visits.Sum(v => nodes[v].Volume);
+        if (volume > vehicle.VolumeCapacity + Eps)
+            violations.Add(new(ViolationKind.VolumeExceeded,
+                $"Route {routeNumber}: volume {volume} exceeds capacity {vehicle.VolumeCapacity}."));
         if (load > vehicle.Capacity + Eps)
             violations.Add(new(ViolationKind.CapacityExceeded, $"Route {routeNumber}: load {load:0.##} exceeds capacity {vehicle.Capacity:0.##}."));
 
         double time = Math.Max(vehicle.Shift.Start, nodes[vehicle.StartDepot].Window.Start);
+        if (time > Math.Min(vehicle.Shift.End, nodes[vehicle.StartDepot].Window.End) + Eps)
+            violations.Add(new(ViolationKind.TimeWindowMissed, $"Route {routeNumber}: the start depot is closed throughout the crew's shift."));
         int previous = vehicle.StartDepot;
 
         foreach (int current in route.Visits)
@@ -155,7 +162,7 @@ public static class SolutionValidator
             previous = current;
         }
 
-        double returnTime = time + matrix.Time(previous, vehicle.EndDepot);
+        double returnTime = Math.Max(time + matrix.Time(previous, vehicle.EndDepot), nodes[vehicle.EndDepot].Window.Start);
         double deadline = Math.Min(vehicle.Shift.End, nodes[vehicle.EndDepot].Window.End);
         if (returnTime > deadline + Eps)
         {

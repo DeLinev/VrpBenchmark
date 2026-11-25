@@ -111,7 +111,8 @@ public sealed class RouteState
     {
         if (visitCount == 0)
             return 0;
-        if (route.TimeWarp > Evaluator.Epsilon || route.Load > vehicle.Capacity + Evaluator.Epsilon)
+        if (route.TimeWarp > Evaluator.Epsilon || route.Load > vehicle.Capacity + Evaluator.Epsilon ||
+            route.Volume > vehicle.VolumeCapacity + Evaluator.Epsilon)
             return double.PositiveInfinity;
         return vehicle.FixedCost + vehicle.CostPerDistance * route.Distance;
     }

@@ -25,9 +25,10 @@ public readonly struct Segment
     public double Latest { get; }
 
     public double Load { get; }
+    public double Volume { get; }
     public double Distance { get; }
 
-    private Segment(int first, int last, double duration, double timeWarp, double earliest, double latest, double load, double distance)
+    private Segment(int first, int last, double duration, double timeWarp, double earliest, double latest, double load, double volume, double distance)
     {
         First = first;
         Last = last;
@@ -36,18 +37,20 @@ public readonly struct Segment
         Earliest = earliest;
         Latest = latest;
         Load = load;
+        Volume = volume;
         Distance = distance;
     }
 
     public static Segment ForNode(Node node) =>
-        new(node.Index, node.Index, node.ServiceTime, 0, node.Window.Start, node.Window.End, node.Demand, 0);
+        new(node.Index, node.Index, node.ServiceTime, 0, node.Window.Start, node.Window.End, node.Demand, node.Volume, 0);
 
     /// <summary>A depot visit restricted to the intersection of the depot opening hours and the vehicle shift.</summary>
-    public static Segment ForDepot(Node depot, TimeWindow shift) =>
-        new(depot.Index, depot.Index, 0, 0,
-            Math.Max(depot.Window.Start, shift.Start),
-            Math.Min(depot.Window.End, shift.End),
-            0, 0);
+    public static Segment ForDepot(Node depot, TimeWindow shift)
+    {
+        double start = Math.Max(depot.Window.Start, shift.Start);
+        double end = Math.Min(depot.Window.End, shift.End);
+        return new(depot.Index, depot.Index, 0, Math.Max(0, start - end), start, end, 0, 0, 0);
+    }
 
     public static Segment Concat(TravelMatrix matrix, in Segment a, in Segment b)
     {
@@ -64,6 +67,7 @@ public readonly struct Segment
             Math.Max(b.Earliest - delta, a.Earliest) - waiting,
             Math.Min(b.Latest - delta, a.Latest) + warp,
             a.Load + b.Load,
+            a.Volume + b.Volume,
             a.Distance + b.Distance + matrix.Distance(a.Last, b.First));
     }
 

@@ -31,65 +31,121 @@ public sealed class InsertionRepair(int regret) : IRepairOperator
 
         var segments = pending.Select(c => Segment.ForNode(instance.Nodes[c])).ToList();
 
-        // costs[r][u] / positions[r][u]: best insertion of pending customer u into route r.
-        var costs = new List<double[]>();
-        var positions = new List<int[]>();
-        for (int r = 0; r < solution.Routes.Count; r++)
-            AddColumn(solution.Routes[r], segments, costs, positions);
+        var routes = solution.Routes;
+        var columns = BuildColumns();
 
         while (pending.Count > 0)
         {
-            int chosen = -1, chosenRoute = -1;
+            int chosen = -1, chosenColumn = -1;
             double chosenKey = double.NegativeInfinity, chosenBest = double.PositiveInfinity;
-
             for (int u = 0; u < pending.Count; u++)
             {
-                double newRoute = solution.NewRouteCost(pending[u]);
-                var (best, bestRoute, regretValue) = Rank(costs, u, newRoute);
-                if (double.IsInfinity(best))
+                var (best, column, regretValue) = Rank(columns, u);
+                if (!double.IsFinite(best))
                     continue;
-
                 double key = regret == 1 ? -best : regretValue;
                 if (key > chosenKey || (key == chosenKey && best < chosenBest))
                 {
                     chosenKey = key;
                     chosenBest = best;
                     chosen = u;
-                    chosenRoute = bestRoute;
+                    chosenColumn = column;
                 }
             }
-
             if (chosen < 0)
                 break;
 
+            var option = columns[chosenColumn];
+            int position = option.Positions[chosen];
             int customer = pending[chosen];
-            if (chosenRoute == costs.Count)
-            {
-                solution.Routes.Add(new RouteState(instance, 0, [customer]));
-                RemovePending(chosen, pending, segments, costs, positions);
-                AddColumn(solution.Routes[^1], segments, costs, positions);
-            }
+            bool newRoute = option.Route == routes.Count;
+            bool crewChanged = newRoute || routes[option.Route].VehicleTypeIndex != option.Type;
+            if (newRoute)
+                routes.Add(new RouteState(instance, option.Type, [customer]));
             else
             {
-                var route = solution.Routes[chosenRoute];
-                route.Visits.Insert(positions[chosenRoute][chosen], customer);
+                var route = routes[option.Route];
+                if (crewChanged)
+                    routes[option.Route] = route = new RouteState(instance, option.Type, route.Visits);
+                route.Visits.Insert(position, customer);
                 route.Update();
-                RemovePending(chosen, pending, segments, costs, positions);
-                UpdateColumn(route, segments, costs[chosenRoute], positions[chosenRoute]);
+            }
+
+            int last = pending.Count - 1;
+            pending[chosen] = pending[last];
+            segments[chosen] = segments[last];
+            pending.RemoveAt(last);
+            segments.RemoveAt(last);
+            if (pending.Count == 0)
+                break;
+
+            if (crewChanged)
+                columns = BuildColumns();
+            else
+                foreach (var column in columns)
+                {
+                    column.Costs[chosen] = column.Costs[last];
+                    column.Positions[chosen] = column.Positions[last];
+                    if (column.Route == option.Route)
+                        Refresh(column);
+                }
+        }
+
+        List<InsertionColumn> BuildColumns()
+        {
+            var result = new List<InsertionColumn>();
+            var free = solution.FreeVehicleTypes().ToArray();
+            for (int i = 0; i < routes.Count; i++)
+            {
+                Add(i, routes[i].VehicleTypeIndex);
+                foreach (int t in free)
+                    if (t != routes[i].VehicleTypeIndex && !routes[i].Vehicle.HasSameRoutingProfile(instance.VehicleTypes[t]))
+                        Add(i, t);
+            }
+            if (routes.Count < solution.MaxRoutes)
+                foreach (int t in free)
+                    Add(routes.Count, t);
+            return result;
+
+            void Add(int route, int type)
+            {
+                var column = new InsertionColumn(route, type, new double[pending.Count], new int[pending.Count]);
+                Refresh(column);
+                result.Add(column);
+            }
+        }
+
+        void Refresh(InsertionColumn column)
+        {
+            var original = column.Route < routes.Count ? routes[column.Route] : null;
+            var route = original?.VehicleTypeIndex == column.Type ? original :
+                new RouteState(instance, column.Type, original?.Visits ?? []);
+            double crewDelta = route.Cost - (original?.Cost ?? 0);
+            for (int u = 0; u < pending.Count; u++)
+            {
+                if (!double.IsFinite(crewDelta))
+                    column.Costs[u] = double.PositiveInfinity;
+                else
+                {
+                    var (delta, position) = PartialSolution.BestInsertion(route, segments[u]);
+                    column.Costs[u] = delta + crewDelta;
+                    column.Positions[u] = position;
+                }
             }
         }
     }
 
-    /// <summary>Best cost, the route giving it (Routes.Count = new route) and the regret value of pending customer u.</summary>
-    private (double Best, int Route, double Regret) Rank(List<double[]> costs, int u, double newRouteCost)
+    private sealed record InsertionColumn(int Route, int Type, double[] Costs, int[] Positions);
+
+    private (double Best, int Route, double Regret) Rank(List<InsertionColumn> columns, int u)
     {
         Span<double> top = stackalloc double[Math.Max(regret, 1)];
         top.Fill(double.PositiveInfinity);
         int bestRoute = -1;
 
-        for (int r = 0; r <= costs.Count; r++)
+        for (int r = 0; r < columns.Count; r++)
         {
-            double c = r < costs.Count ? costs[r][u] : newRouteCost;
+            double c = columns[r].Costs[u];
             if (double.IsInfinity(c) || c >= top[^1])
                 continue;
 
@@ -112,34 +168,4 @@ public sealed class InsertionRepair(int regret) : IRepairOperator
         return (top[0], bestRoute, regretValue);
     }
 
-    private static void AddColumn(RouteState route, List<Segment> segments, List<double[]> costs, List<int[]> positions)
-    {
-        var c = new double[segments.Count];
-        var p = new int[segments.Count];
-        UpdateColumn(route, segments, c, p);
-        costs.Add(c);
-        positions.Add(p);
-    }
-
-    private static void UpdateColumn(RouteState route, List<Segment> segments, double[] costs, int[] positions)
-    {
-        for (int u = 0; u < segments.Count; u++)
-            (costs[u], positions[u]) = PartialSolution.BestInsertion(route, segments[u]);
-    }
-
-    /// <summary>Swap-removes pending entry u so that column arrays stay aligned with the pending list.</summary>
-    private static void RemovePending(int u, List<int> pending, List<Segment> segments, List<double[]> costs, List<int[]> positions)
-    {
-        int last = pending.Count - 1;
-        pending[u] = pending[last];
-        segments[u] = segments[last];
-        pending.RemoveAt(last);
-        segments.RemoveAt(last);
-
-        for (int r = 0; r < costs.Count; r++)
-        {
-            costs[r][u] = costs[r][last];
-            positions[r][u] = positions[r][last];
-        }
-    }
 }

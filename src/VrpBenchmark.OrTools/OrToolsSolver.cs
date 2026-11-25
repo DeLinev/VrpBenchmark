@@ -76,6 +76,13 @@ public sealed class OrToolsSolver : ISolver
             Scaled(nodes[manager.IndexToNode(from)].Demand));
         long[] capacities = [.. vehicles.Select(v => Floor(v.Type.Capacity))];
         routing.AddDimensionWithVehicleCapacity(demandCallback, 0, capacities, true, "Capacity");
+        if (vehicles.Any(v => double.IsFinite(v.Type.VolumeCapacity)) && instance.Customers.Any(i => nodes[i].Volume > 0))
+        {
+            int volumeCallback = routing.RegisterUnaryTransitCallback((long from) => Scaled(nodes[manager.IndexToNode(from)].Volume));
+            long totalVolume = instance.Customers.Sum(i => Scaled(nodes[i].Volume));
+            long[] limits = [.. vehicles.Select(v => double.IsFinite(v.Type.VolumeCapacity) ? Floor(v.Type.VolumeCapacity) : totalVolume)];
+            routing.AddDimensionWithVehicleCapacity(volumeCallback, 0, limits, true, "Volume");
+        }
 
         var history = new List<ProgressPoint>();
         // The callback fires for every accepted solution, not only improving ones, so only new bests are kept.

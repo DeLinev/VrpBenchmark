@@ -14,7 +14,8 @@ public readonly record struct RouteStats(
     int LateNodes,
     double Cost)
 {
-    public bool IsFeasible => Overload <= Evaluator.Epsilon && LateNodes == 0;
+    public double VolumeOverload { get; init; }
+    public bool IsFeasible => Overload <= Evaluator.Epsilon && VolumeOverload <= Evaluator.Epsilon && LateNodes == 0;
 }
 
 public sealed record SolutionStats(
@@ -24,7 +25,10 @@ public sealed record SolutionStats(
     double Cost,
     double Overload,
     double Lateness,
-    int LateNodes);
+    int LateNodes)
+{
+    public double VolumeOverload { get; init; }
+}
 
 /// <summary>
 /// Reference evaluation of routes from scratch. Algorithms may use faster incremental evaluation,
@@ -46,8 +50,10 @@ public static class Evaluator
         // The vehicle departs as early as possible; postponing the departure to cut waiting time is not modelled.
         double startTime = Math.Max(vehicle.Shift.Start, nodes[vehicle.StartDepot].Window.Start);
         double time = startTime;
-        double distance = 0, load = 0, lateness = 0;
-        int lateNodes = 0;
+        double distance = 0, load = 0, volume = 0, lateness = 0;
+        double departureDeadline = Math.Min(vehicle.Shift.End, nodes[vehicle.StartDepot].Window.End);
+        lateness = Math.Max(0, startTime - departureDeadline);
+        int lateNodes = lateness > Epsilon ? 1 : 0;
         int previous = vehicle.StartDepot;
 
         foreach (int current in route.Visits)
@@ -64,11 +70,13 @@ public static class Evaluator
 
             time += node.ServiceTime;
             load += node.Demand;
+            volume += node.Volume;
             previous = current;
         }
 
         distance += matrix.Distance(previous, vehicle.EndDepot);
         time += matrix.Time(previous, vehicle.EndDepot);
+        time = Math.Max(time, nodes[vehicle.EndDepot].Window.Start);
 
         double returnDeadline = Math.Min(vehicle.Shift.End, nodes[vehicle.EndDepot].Window.End);
         if (time > returnDeadline + Epsilon)
@@ -80,13 +88,14 @@ public static class Evaluator
         double duration = time - startTime;
         double cost = vehicle.FixedCost + vehicle.CostPerDistance * distance + vehicle.CostPerTime * duration;
 
-        return new RouteStats(distance, duration, load, Math.Max(0, load - vehicle.Capacity), lateness, lateNodes, cost);
+        return new RouteStats(distance, duration, load, Math.Max(0, load - vehicle.Capacity), lateness, lateNodes, cost)
+        { VolumeOverload = Math.Max(0, volume - vehicle.VolumeCapacity) };
     }
 
     public static SolutionStats Evaluate(ProblemInstance instance, Solution solution)
     {
         int vehicles = 0, lateNodes = 0;
-        double distance = 0, duration = 0, cost = 0, overload = 0, lateness = 0;
+        double distance = 0, duration = 0, cost = 0, overload = 0, volumeOverload = 0, lateness = 0;
 
         foreach (var route in solution.UsedRoutes)
         {
@@ -96,10 +105,12 @@ public static class Evaluator
             duration += stats.Duration;
             cost += stats.Cost;
             overload += stats.Overload;
+            volumeOverload += stats.VolumeOverload;
             lateness += stats.Lateness;
             lateNodes += stats.LateNodes;
         }
 
-        return new SolutionStats(vehicles, distance, duration, cost, overload, lateness, lateNodes);
+        return new SolutionStats(vehicles, distance, duration, cost, overload, lateness, lateNodes)
+        { VolumeOverload = volumeOverload };
     }
 }

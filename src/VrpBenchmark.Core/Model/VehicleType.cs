@@ -14,4 +14,9 @@ public sealed record VehicleType(
     TimeWindow Shift,
     double FixedCost,
     double CostPerDistance,
-    double CostPerTime = 0);
+    double CostPerTime = 0)
+{
+    public double VolumeCapacity { get; init; } = double.PositiveInfinity;
+
+    public bool HasSameRoutingProfile(VehicleType other) => this == (other with { Id = Id, Count = Count });
+}

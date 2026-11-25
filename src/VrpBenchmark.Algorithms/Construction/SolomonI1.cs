@@ -83,6 +83,7 @@ public sealed class SolomonI1 : ISolver
 
             var route = new List<int> { seed };
             double load = nodes[seed].Demand;
+            double volume = nodes[seed].Volume;
 
             while (true)
             {
@@ -92,7 +93,8 @@ public sealed class SolomonI1 : ISolver
 
                 foreach (int u in unrouted)
                 {
-                    if (load + nodes[u].Demand > vehicle.Capacity + Evaluator.Epsilon)
+                    if (load + nodes[u].Demand > vehicle.Capacity + Evaluator.Epsilon ||
+                        volume + nodes[u].Volume > vehicle.VolumeCapacity + Evaluator.Epsilon)
                         continue;
 
                     var (position, c1) = BestInsertion(instance, schedule, u, p);
@@ -113,6 +115,7 @@ public sealed class SolomonI1 : ISolver
 
                 route.Insert(bestPosition, bestCustomer);
                 load += nodes[bestCustomer].Demand;
+                volume += nodes[bestCustomer].Volume;
                 unrouted.Remove(bestCustomer);
             }
 

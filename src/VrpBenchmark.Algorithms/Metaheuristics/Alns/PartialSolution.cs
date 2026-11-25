@@ -100,13 +100,34 @@ public sealed class PartialSolution
         return (best, position);
     }
 
-    /// <summary>Cost of serving the customer alone with a new vehicle of type 0, or +∞ if no vehicle is available.</summary>
+    /// <summary>One available type per distinct set of routing constraints and tariffs.</summary>
+    internal IEnumerable<int> FreeVehicleTypes()
+    {
+        var types = Instance.VehicleTypes;
+        if (types.Count == 1)
+        {
+            if (Routes.Count < types[0].Count)
+                yield return 0;
+            yield break;
+        }
+
+        var used = new int[types.Count];
+        foreach (var route in Routes)
+            used[route.VehicleTypeIndex]++;
+
+        var seen = new HashSet<VehicleType>();
+        for (int i = 0; i < types.Count; i++)
+            if (used[i] < types[i].Count && seen.Add(types[i] with { Id = "", Count = 1 }))
+                yield return i;
+    }
+
+    /// <summary>Cheapest feasible singleton route that can be added to the current fleet.</summary>
     public double NewRouteCost(int customer)
     {
         if (Routes.Count >= MaxRoutes)
             return double.PositiveInfinity;
 
-        var route = new RouteState(Instance, 0, [customer]);
-        return route.Cost;
+        return FreeVehicleTypes().Select(t => new RouteState(Instance, t, [customer]).Cost)
+            .DefaultIfEmpty(double.PositiveInfinity).Min();
     }
 }
